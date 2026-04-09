@@ -56,6 +56,8 @@ button[data-testid="stBaseButton-secondary"] {{
     white-space: nowrap !important;
     font-size: 14px !important;
     font-weight: 600 !important;
+    padding-left: 12px !important;   /* ← добавь эту строку */
+    padding-right: 12px !important;  /* ← и эту */
 }}
 
 /* вторичная кнопка — белая с синей рамкой */
@@ -87,7 +89,7 @@ button[data-testid="stBaseButton-primary"]:hover {{
 # ── заголовок ──────────────────────────────────────────────────────────────
 st.markdown(
     f"<h1 style='font-size:28px;font-weight:700;color:{BLUE};"
-    f"margin-bottom:12px;'>ИС Статус. Дэшборд</h1>",
+    f"margin-bottom:12px;'>ИС СТАТУС. ДЭШБОРД</h1>",
     unsafe_allow_html=True,
 )
 
