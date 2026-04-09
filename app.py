@@ -11,6 +11,8 @@ BAR_T  = "#1D9E75"
 LINE_C = "#D85A30"
 LINE_A = "#BA7517"
 LINE_P = "#7F77DD"
+BG     = "rgba(0,0,0,0)"
+GRID   = "rgba(128,128,128,0.15)"
 
 FUNNEL_COLORS_LIST = ["#378ADD", "#1D9E75", "#BA7517"]
 FUNNEL_LABELS      = ["Тип А", "Тип Б", "Тип В"]
@@ -19,7 +21,6 @@ FUNNEL_LABELS      = ["Тип А", "Тип Б", "Тип В"]
 weeks  = ["июл 24","авг 24","сен 24","окт 24","ноя 24",
           "дек 24","янв 25","фев 25","мар 25","апр 25"]
 weeks8 = ["сен 24","окт 24","ноя 24","дек 24","янв 25","фев 25","мар 25","апр 25"]
-
 affected  = [420,480,510,530,500,470,490,540,520,480]
 resolved  = [600,650,680,720,750,790,820,850]
 repeat_c  = [6.2,6.4,6.1,5.9,6.0,5.8,5.7,5.9,5.7,5.6]
@@ -40,83 +41,84 @@ funnel_parts  = {
     "Устранено":              [320, 310, 220],
 }
 
-# ── session state ──────────────────────────────────────────────────────────
-if "page" not in st.session_state:
-    st.session_state.page = "summary"
+# ── навигация через query_params (без rerun/мерцания) ─────────────────────
+params = st.query_params
+p = params.get("page", "summary")
+if p not in ("summary", "bmo"):
+    p = "summary"
 
-# ── глобальный CSS ─────────────────────────────────────────────────────────
-st.markdown("""
+# ── CSS ────────────────────────────────────────────────────────────────────
+# Кнопки стилизуем через уникальные key → aria-label
+if p == "summary":
+    s_bg, s_col = BLUE, "#ffffff"
+    b_bg, b_col = "#ffffff", BLUE
+else:
+    s_bg, s_col = "#ffffff", BLUE
+    b_bg, b_col = BLUE, "#ffffff"
+
+st.markdown(f"""
 <style>
-.block-container { padding-top: 1.5rem !important; }
+.block-container {{ padding-top: 1.5rem !important; }}
 
-/* сбрасываем дефолтные стили кнопок streamlit */
-div.stButton > button {
+/* общий сброс для nav-кнопок */
+button[kind="secondary"] {{
     border-radius: 8px !important;
     font-size: 14px !important;
     font-weight: 600 !important;
-    padding: 9px 24px !important;
     white-space: nowrap !important;
-    width: auto !important;
     transition: background-color 0.15s, color 0.15s !important;
-}
-div.stButton > button:focus,
-div.stButton > button:focus-visible {
-    outline: none !important;
-    box-shadow: none !important;
-}
+}}
+
+/* Саммари — key="nav_summary" → aria-label содержит текст кнопки */
+[data-testid="stBaseButton-secondary"][aria-label="Саммари"] {{
+    background-color: {s_bg} !important;
+    color: {s_col} !important;
+    border: 2px solid {BLUE} !important;
+    padding: 9px 28px !important;
+}}
+[data-testid="stBaseButton-secondary"][aria-label="Саммари"]:hover {{
+    background-color: {s_bg} !important;
+    color: {s_col} !important;
+    opacity: 0.9;
+}}
+
+/* БМО */
+[data-testid="stBaseButton-secondary"][aria-label="Влияние на бизнес. БМО"] {{
+    background-color: {b_bg} !important;
+    color: {b_col} !important;
+    border: 2px solid {BLUE} !important;
+    padding: 9px 28px !important;
+}}
+[data-testid="stBaseButton-secondary"][aria-label="Влияние на бизнес. БМО"]:hover {{
+    background-color: {b_bg} !important;
+    color: {b_col} !important;
+    opacity: 0.9;
+}}
 </style>
 """, unsafe_allow_html=True)
 
-# ── заголовок ─────────────────────────────────────────────────────────────
+# ── заголовок ──────────────────────────────────────────────────────────────
 st.markdown(
     f"<h1 style='font-size:28px;font-weight:700;color:{BLUE};"
     f"margin-bottom:12px;'>ИС Статус. Дэшборд</h1>",
     unsafe_allow_html=True,
 )
 
-# ── кнопки переключения ───────────────────────────────────────────────────
-p = st.session_state.page
-
-btn_col1, btn_col2, spacer = st.columns([1, 1.4, 8])
-
-with btn_col1:
-    st.button("Саммари", key="btn_s",
-              on_click=lambda: st.session_state.update(page="summary"))
-
-with btn_col2:
-    st.button("Влияние на бизнес. БМО", key="btn_b",
-              on_click=lambda: st.session_state.update(page="bmo"))
-
-# Окрашиваем кнопки: активная — тёмно-синяя, неактивная — белая с рамкой
-if p == "summary":
-    s_bg, s_col, b_bg, b_col = BLUE, "#fff", "#fff", BLUE
-else:
-    s_bg, s_col, b_bg, b_col = "#fff", BLUE, BLUE, "#fff"
-
-st.markdown(f"""
-<style>
-/* Саммари */
-div[data-testid="column"]:nth-of-type(1) div.stButton > button {{
-    background-color: {s_bg} !important;
-    color: {s_col} !important;
-    border: 2px solid {BLUE} !important;
-}}
-/* БМО */
-div[data-testid="column"]:nth-of-type(2) div.stButton > button {{
-    background-color: {b_bg} !important;
-    color: {b_col} !important;
-    border: 2px solid {BLUE} !important;
-}}
-</style>
-""", unsafe_allow_html=True)
+# ── кнопки (query_params — без rerun, без мерцания) ───────────────────────
+c1, c2, _ = st.columns([0.9, 1.5, 9])
+with c1:
+    if st.button("Саммари", key="nav_summary"):
+        st.query_params["page"] = "summary"
+        st.rerun()
+with c2:
+    if st.button("Влияние на бизнес. БМО", key="nav_bmo"):
+        st.query_params["page"] = "bmo"
+        st.rerun()
 
 st.markdown("<hr style='margin:10px 0 18px;border:none;border-top:1px solid #ddd;'>",
             unsafe_allow_html=True)
 
 # ── хелперы ────────────────────────────────────────────────────────────────
-BG   = "rgba(0,0,0,0)"
-GRID = "rgba(128,128,128,0.15)"
-
 def metric_card(label, value, bg=BLUE):
     st.markdown(
         f'<div style="background:{bg};border-radius:10px;padding:10px 14px;'
@@ -130,20 +132,16 @@ def chart_title(txt):
         f'<p style="font-size:16px;font-weight:600;margin:0 0 2px;color:{BLUE};">{txt}</p>',
         unsafe_allow_html=True)
 
-def manual_layout(h=230, dual=False, legend=False):
-    """Возвращает dict. dual=True оставляет место для yaxis2 (не включает его)."""
-    d = dict(
+def manual_layout(h=210, right_margin=8):
+    return dict(
         height=h,
-        margin=dict(t=10, b=32, l=42, r=50 if dual else 8),
+        margin=dict(t=10, b=32, l=42, r=right_margin),
         paper_bgcolor=BG, plot_bgcolor=BG,
         font=dict(size=11, color="#888780"),
-        showlegend=legend,
+        showlegend=False,
         xaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
         yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
     )
-    if legend:
-        d["legend"] = dict(orientation="h", y=1.12, x=0, font=dict(size=10))
-    return d
 
 def build_funnel_svg():
     W, H    = 520, 460
@@ -167,13 +165,13 @@ def build_funnel_svg():
         total_p  = sum(parts)
         ct, cb   = xl_top, xl_bot
         for j in range(3):
-            fj   = parts[j]/total_p
-            swt  = bw_top*fj
-            swb  = bw_bot*fj
-            pts  = (f"{ct:.1f},{yt} {ct+swt:.1f},{yt} "
-                    f"{cb+swb:.1f},{yb} {cb:.1f},{yb}")
-            tx   = ct + swt/2
-            ty   = yt + row_h/2 + 5
+            fj  = parts[j]/total_p
+            swt = bw_top*fj
+            swb = bw_bot*fj
+            pts = (f"{ct:.1f},{yt} {ct+swt:.1f},{yt} "
+                   f"{cb+swb:.1f},{yb} {cb:.1f},{yb}")
+            tx  = ct + swt/2
+            ty  = yt + row_h/2 + 5
             out.append(f'<polygon points="{pts}" fill="{FUNNEL_COLORS_LIST[j]}" '
                        f'opacity="0.88" stroke="white" stroke-width="1.5"/>')
             out.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" '
@@ -208,7 +206,7 @@ if p == "summary":
         with g1:
             chart_title("Динамика пораженности по неделям")
             f1 = go.Figure(go.Bar(x=weeks, y=affected, marker_color=BAR_B, opacity=.85))
-            f1.update_layout(**manual_layout(h=210))
+            f1.update_layout(**manual_layout())
             st.plotly_chart(f1, use_container_width=True)
 
         st.divider()
@@ -220,7 +218,7 @@ if p == "summary":
         with g2:
             chart_title("Доля устранённых отклонений (8 нед.)")
             f2 = go.Figure(go.Bar(x=weeks8, y=resolved, marker_color=BAR_T, opacity=.85))
-            f2.update_layout(**manual_layout(h=210))
+            f2.update_layout(**manual_layout())
             st.plotly_chart(f2, use_container_width=True)
 
     with col_r:
@@ -229,7 +227,7 @@ if p == "summary":
             chart_title("Средний счётчик повторов")
             f3 = go.Figure(go.Scatter(x=weeks, y=repeat_c, mode="lines+markers",
                                       line=dict(color=LINE_C, width=2), marker=dict(size=6)))
-            f3.update_layout(**manual_layout(h=210))
+            f3.update_layout(**manual_layout())
             st.plotly_chart(f3, use_container_width=True)
         with m3:
             metric_card("Доля устранённых", "850 шт.", TEAL)
@@ -241,7 +239,7 @@ if p == "summary":
             chart_title("Скорость устранения по неделям")
             f4 = go.Figure(go.Scatter(x=weeks, y=speed_val, mode="lines+markers",
                                       line=dict(color=LINE_A, width=2), marker=dict(size=6)))
-            f4.update_layout(**manual_layout(h=210))
+            f4.update_layout(**manual_layout())
             st.plotly_chart(f4, use_container_width=True)
         with m4:
             metric_card("Скорость устранения", "1 600 / 1 525", TEAL)
@@ -266,7 +264,6 @@ else:
     graphs_col, funnel_col = st.columns([11, 9], gap="large")
 
     with graphs_col:
-        # График 1 — двойная ось (полностью ручной, без распаковки)
         chart_title("Динамика ВСП и задач по неделям")
         f5 = go.Figure()
         f5.add_trace(go.Bar(name="ВСП", x=bmo_weeks, y=bmo_vsp,
@@ -290,7 +287,6 @@ else:
         )
         st.plotly_chart(f5, use_container_width=True)
 
-        # График 2 — одна ось (полностью ручной, без распаковки)
         chart_title("Доля и скорость устранения")
         f6 = go.Figure()
         f6.add_trace(go.Bar(name="Доля (%)", x=bmo_weeks, y=bmo_share,
