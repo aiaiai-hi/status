@@ -94,7 +94,7 @@ st.markdown(
 )
 
 # ── кнопки: type="primary" для активной, "secondary" для неактивной ────────
-c1, c2, _ = st.columns([0.9, 1.5, 9])
+c1, c2, _ = st.columns([0.9, 1.9, 7])
 with c1:
     if st.button(
         "Саммари",
