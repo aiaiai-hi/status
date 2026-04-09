@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="ИС Статус. Отчёт", layout="wide")
 
+# ── палитра ────────────────────────────────────────────────────────────────
 BLUE   = "#1D5FA5"
 TEAL   = "#0F6E56"
 BAR_B  = "#378ADD"
@@ -11,6 +12,7 @@ LINE_C = "#D85A30"
 LINE_A = "#BA7517"
 LINE_P = "#7F77DD"
 
+# ── данные ─────────────────────────────────────────────────────────────────
 weeks  = ["июл 24","авг 24","сен 24","окт 24","ноя 24",
           "дек 24","янв 25","фев 25","мар 25","апр 25"]
 weeks8 = ["сен 24","окт 24","ноя 24","дек 24","янв 25","фев 25","мар 25","апр 25"]
@@ -26,27 +28,30 @@ bmo_tasks  = [1300,1350,1400,1420,1450,1430,1460,1525]
 bmo_share  = [22,26,24,22,25,23,26,24]
 bmo_speed2 = [18,20,17,19,21,18,20,19]
 
-funnel_stages = ["Всего отклонений","Выявлено в системе","Передано на устранение","Устранено"]
-funnel_vals   = [1600,1200,950,850]
-funnel_parts  = {
-    "Всего отклонений":       {"Тип А":600,"Тип Б":600,"Тип В":400},
-    "Выявлено в системе":     {"Тип А":460,"Тип Б":440,"Тип В":300},
-    "Передано на устранение": {"Тип А":360,"Тип Б":350,"Тип В":240},
-    "Устранено":              {"Тип А":320,"Тип Б":310,"Тип В":220},
+funnel_stages = [
+    "Всего отклонений",
+    "Выявлено в системе",
+    "Передано на устранение",
+    "Устранено",
+]
+funnel_vals  = [1600, 1200, 950, 850]
+funnel_parts = {
+    "Всего отклонений":       {"Тип А": 600, "Тип Б": 600, "Тип В": 400},
+    "Выявлено в системе":     {"Тип А": 460, "Тип Б": 440, "Тип В": 300},
+    "Передано на устранение": {"Тип А": 360, "Тип Б": 350, "Тип В": 240},
+    "Устранено":              {"Тип А": 320, "Тип Б": 310, "Тип В": 220},
 }
-FUNNEL_COLORS = {"Тип А":"#378ADD","Тип Б":"#1D9E75","Тип В":"#BA7517"}
+FUNNEL_COLORS = {"Тип А": "#378ADD", "Тип Б": "#1D9E75", "Тип В": "#BA7517"}
 
-
-def base_layout(height=200, title=""):
+# ── хелперы ────────────────────────────────────────────────────────────────
+def simple_layout(height=210):
+    """Layout без двойных осей — безопасен для **распаковки."""
     return dict(
         height=height,
-        margin=dict(t=30, b=32, l=42, r=8),
+        margin=dict(t=14, b=32, l=42, r=8),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(size=11, color="#888780"),
-        title_text=title,
-        title_font_size=11,
-        title_x=0,
         xaxis=dict(gridcolor="rgba(128,128,128,0.15)", tickfont=dict(size=10)),
         yaxis=dict(gridcolor="rgba(128,128,128,0.15)", tickfont=dict(size=10)),
         showlegend=False,
@@ -57,81 +62,100 @@ def metric_card(label, value, bg=BLUE):
     st.markdown(
         f"""<div style="background:{bg};border-radius:10px;padding:10px 14px;
                 color:#fff;margin-bottom:10px;">
-          <div style="font-size:11px;opacity:0.85;line-height:1.3;margin-bottom:4px;">{label}</div>
+          <div style="font-size:11px;opacity:0.85;line-height:1.3;
+                      margin-bottom:4px;">{label}</div>
           <div style="font-size:20px;font-weight:500;">{value}</div>
         </div>""",
         unsafe_allow_html=True,
     )
 
 
-def section_title(text):
-    st.markdown(
-        f"""<div style="background:{BLUE};color:#fff;font-size:15px;font-weight:500;
-                border-radius:8px;padding:8px 14px;margin-bottom:14px;
-                display:inline-block;">{text}</div>""",
-        unsafe_allow_html=True,
-    )
+# ── навигация через st.radio (вместо вкладок + дублирующих плашек) ─────────
+page = st.radio(
+    label="",
+    options=["ИС Статус. Summary", "Влияние на бизнес. БМО"],
+    horizontal=True,
+    label_visibility="collapsed",
+)
 
-
-tab1, tab2 = st.tabs(["ИС Статус. Summary", "Влияние на бизнес. БМО"])
-
+st.markdown("<hr style='margin:6px 0 16px;border:none;border-top:1px solid #ddd;'>",
+            unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════
-# TAB 1 — SUMMARY
-# Левая колонка:  метрики(слева) + граф1, метрики(слева) + граф2
-# Правая колонка: граф3 + метрика(справа), граф4 + метрика(справа)
+# СТРАНИЦА 1 — SUMMARY
 # ══════════════════════════════════════════════════════════════════════════
-with tab1:
-    section_title("ИС Статус. Summary")
+if page == "ИС Статус. Summary":
 
     col_left, col_right = st.columns(2, gap="large")
 
+    # ── левая колонка ──────────────────────────────────────────────────
     with col_left:
-        # блок 1: метрики слева, график справа
+        # блок 1
         m1, g1 = st.columns([1, 2])
         with m1:
             metric_card("Кол-во видов отклонений", "16 шт.", BLUE)
             metric_card("Кол-во человек с отклонениями", "1 000 чел.", BLUE)
         with g1:
-            fig1 = go.Figure(go.Bar(x=weeks, y=affected, marker_color=BAR_B, opacity=0.85))
-            fig1.update_layout(**base_layout(title="Динамика пораженности"))
+            fig1 = go.Figure(
+                go.Bar(x=weeks, y=affected, marker_color=BAR_B, opacity=0.85)
+            )
+            fig1.update_layout(
+                **simple_layout(),
+                title_text="Динамика пораженности по неделям",
+                title_font_size=12, title_x=0,
+            )
             st.plotly_chart(fig1, use_container_width=True)
 
         st.divider()
 
-        # блок 2: метрики слева, график справа
+        # блок 2
         m2, g2 = st.columns([1, 2])
         with m2:
             metric_card("Кол-во ВСП с отклонениями", "850 шт.", BLUE)
             metric_card("Кол-во задач / хроник", "1 600 / 1 525", BLUE)
         with g2:
-            fig2 = go.Figure(go.Bar(x=weeks8, y=resolved, marker_color=BAR_T, opacity=0.85))
-            fig2.update_layout(**base_layout(title="Доля устранённых (8 нед.)"))
+            fig2 = go.Figure(
+                go.Bar(x=weeks8, y=resolved, marker_color=BAR_T, opacity=0.85)
+            )
+            fig2.update_layout(
+                **simple_layout(),
+                title_text="Доля устранённых отклонений (8 нед.)",
+                title_font_size=12, title_x=0,
+            )
             st.plotly_chart(fig2, use_container_width=True)
 
+    # ── правая колонка ─────────────────────────────────────────────────
     with col_right:
-        # блок 3: график слева, метрика справа
+        # блок 3
         g3, m3 = st.columns([2, 1])
         with g3:
             fig3 = go.Figure(go.Scatter(
                 x=weeks, y=repeat_c, mode="lines+markers",
-                line=dict(color=LINE_C, width=2), marker=dict(size=6)
+                line=dict(color=LINE_C, width=2), marker=dict(size=6),
             ))
-            fig3.update_layout(**base_layout(title="Средний счётчик повторов"))
+            fig3.update_layout(
+                **simple_layout(),
+                title_text="Средний счётчик повторов",
+                title_font_size=12, title_x=0,
+            )
             st.plotly_chart(fig3, use_container_width=True)
         with m3:
             metric_card("Доля устранённых отклонений", "850 шт.", TEAL)
 
         st.divider()
 
-        # блок 4: график слева, метрика справа
+        # блок 4
         g4, m4 = st.columns([2, 1])
         with g4:
             fig4 = go.Figure(go.Scatter(
                 x=weeks, y=speed_val, mode="lines+markers",
-                line=dict(color=LINE_A, width=2), marker=dict(size=6)
+                line=dict(color=LINE_A, width=2), marker=dict(size=6),
             ))
-            fig4.update_layout(**base_layout(title="Скорость устранения"))
+            fig4.update_layout(
+                **simple_layout(),
+                title_text="Скорость устранения",
+                title_font_size=12, title_x=0,
+            )
             st.plotly_chart(fig4, use_container_width=True)
         with m4:
             metric_card("Скорость устранения", "1 600 / 1 525", TEAL)
@@ -140,11 +164,10 @@ with tab1:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# TAB 2 — БМО
+# СТРАНИЦА 2 — БМО
 # ══════════════════════════════════════════════════════════════════════════
-with tab2:
-    section_title("ИС Статус. Влияние на бизнес. БМО")
-
+else:
+    # метрики — верхняя строка
     mc1, mc2, mc3, mc4, mc5, mc6 = st.columns(6)
     with mc1: st.metric("Доля по Банку", "50,1%", "+0,2%")
     with mc2: st.metric("Целевое значение", "—")
@@ -155,80 +178,101 @@ with tab2:
 
     st.divider()
 
-    graphs_col, funnel_col = st.columns([2, 1])
+    # основная секция: [2 графика | воронка]
+    graphs_col, funnel_col = st.columns([2, 1], gap="large")
 
     with graphs_col:
-        # График 1 — ВСП (bars) + задачи (line), два Y-axis
-        # Строим вручную без распаковки base_layout, чтобы не конфликтовало
+        # --- График 1: ВСП (bar) + задачи (line), два Y ---
+        # НЕ распаковываем simple_layout — прописываем вручную
         fig5 = go.Figure()
         fig5.add_trace(go.Bar(
             name="ВСП", x=bmo_weeks, y=bmo_vsp,
-            marker_color=BAR_B, opacity=0.8, yaxis="y1"
+            marker_color=BAR_B, opacity=0.8, yaxis="y1",
         ))
         fig5.add_trace(go.Scatter(
             name="Задачи", x=bmo_weeks, y=bmo_tasks,
             mode="lines+markers",
             line=dict(color=LINE_C, width=2),
             marker=dict(size=5),
-            yaxis="y2"
+            yaxis="y2",
         ))
         fig5.update_layout(
-            height=220,
-            margin=dict(t=40, b=32, l=42, r=50),
+            height=240,
+            margin=dict(t=50, b=32, l=42, r=50),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(size=11, color="#888780"),
-            title_text="Динамика ВСП и задач по неделям",
-            title_font_size=11,
-            title_x=0,
+            title=dict(
+                text="Динамика ВСП и задач по неделям",
+                font=dict(size=15),
+                x=0,
+                pad=dict(b=20),
+            ),
             showlegend=True,
-            legend=dict(orientation="h", y=1.22, x=0, font=dict(size=10)),
+            legend=dict(orientation="h", y=1.28, x=0, font=dict(size=10)),
             xaxis=dict(
                 gridcolor="rgba(128,128,128,0.15)",
-                tickfont=dict(size=10)
+                tickfont=dict(size=10),
             ),
             yaxis=dict(
                 gridcolor="rgba(128,128,128,0.15)",
                 tickfont=dict(size=10),
-                title="ВСП",
-                title_font_size=10,
+                title=dict(text="ВСП", font=dict(size=10)),
             ),
             yaxis2=dict(
                 overlaying="y",
                 side="right",
                 gridcolor="rgba(0,0,0,0)",
                 tickfont=dict(size=10),
-                title="Задачи",
-                title_font_size=10,
+                title=dict(text="Задачи", font=dict(size=10)),
             ),
         )
         st.plotly_chart(fig5, use_container_width=True)
 
-        # График 2 — доля (bars) + скорость (line)
+        # --- График 2: доля (bar) + скорость (line) ---
+        # НЕ распаковываем simple_layout — прописываем вручную
         fig6 = go.Figure()
         fig6.add_trace(go.Bar(
             name="Доля (%)", x=bmo_weeks, y=bmo_share,
-            marker_color=LINE_P, opacity=0.85
+            marker_color=LINE_P, opacity=0.85,
         ))
         fig6.add_trace(go.Scatter(
             name="Скорость", x=bmo_weeks, y=bmo_speed2,
             mode="lines+markers",
             line=dict(color=LINE_A, width=2),
-            marker=dict(size=5)
+            marker=dict(size=5),
         ))
         fig6.update_layout(
-            **base_layout(height=220, title="Доля и скорость устранения"),
+            height=240,
+            margin=dict(t=50, b=32, l=42, r=8),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(size=11, color="#888780"),
+            title=dict(
+                text="Доля и скорость устранения",
+                font=dict(size=15),
+                x=0,
+                pad=dict(b=20),
+            ),
             showlegend=True,
-            legend=dict(orientation="h", y=1.22, x=0, font=dict(size=10)),
+            legend=dict(orientation="h", y=1.28, x=0, font=dict(size=10)),
             barmode="overlay",
+            xaxis=dict(
+                gridcolor="rgba(128,128,128,0.15)",
+                tickfont=dict(size=10),
+            ),
+            yaxis=dict(
+                gridcolor="rgba(128,128,128,0.15)",
+                tickfont=dict(size=10),
+            ),
         )
         st.plotly_chart(fig6, use_container_width=True)
 
     with funnel_col:
         st.markdown(
-            "<div style='font-size:12px;color:#5F5E5A;margin-bottom:6px;'>"
-            "Воронка метрик БА по БМО</div>",
-            unsafe_allow_html=True
+            "<p style='font-size:15px;font-weight:500;margin-bottom:10px;'>"
+            "Воронка метрик БА по БМО</p>",
+            unsafe_allow_html=True,
         )
         fig_f = go.Figure()
         for part, color in FUNNEL_COLORS.items():
@@ -257,14 +301,14 @@ with tab2:
         ]
 
         fig_f.update_layout(
-            height=480,
+            height=530,
             margin=dict(t=10, b=10, l=10, r=70),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(size=11, color="#888780"),
             barmode="stack",
             showlegend=True,
-            legend=dict(orientation="h", y=-0.06, x=0, font=dict(size=10)),
+            legend=dict(orientation="h", y=-0.05, x=0, font=dict(size=10)),
             xaxis=dict(visible=False),
             yaxis=dict(
                 autorange="reversed",
