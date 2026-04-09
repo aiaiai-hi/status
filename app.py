@@ -39,72 +39,49 @@ funnel_parts  = {
     "Устранено":              [320, 310, 220],
 }
 
-# ── навигация ──────────────────────────────────────────────────────────────
-params = st.query_params
-p = params.get("page", "summary")
-if p not in ("summary", "bmo"):
-    p = "summary"
+# ── session state ──────────────────────────────────────────────────────────
+if "page" not in st.session_state:
+    st.session_state.page = "summary"
 
-# ── базовый CSS ────────────────────────────────────────────────────────────
-st.markdown("""
+p = st.session_state.page
+
+# ── CSS: только точечные правки, не трогаем цвет кнопок ───────────────────
+st.markdown(f"""
 <style>
-.block-container { padding-top: 1.5rem !important; }
-/* базовый вид для обеих nav-кнопок */
-button[data-testid="stBaseButton-secondary"] {
-    border-radius: 8px !important;
+.block-container {{ padding-top: 1.5rem !important; }}
+
+/* убираем перенос текста в кнопках */
+button[data-testid="stBaseButton-primary"],
+button[data-testid="stBaseButton-secondary"] {{
+    white-space: nowrap !important;
     font-size: 14px !important;
     font-weight: 600 !important;
-    white-space: nowrap !important;
-    min-width: 60px !important;
-    padding: 9px 20px !important;
-    border: 2px solid #1D5FA5 !important;
-    transition: none !important;
-}
+}}
+
+/* вторичная кнопка — белая с синей рамкой */
+button[data-testid="stBaseButton-secondary"] {{
+    background-color: #ffffff !important;
+    color: {BLUE} !important;
+    border: 2px solid {BLUE} !important;
+}}
+button[data-testid="stBaseButton-secondary"]:hover {{
+    background-color: #e8f0fb !important;
+    color: {BLUE} !important;
+    border: 2px solid {BLUE} !important;
+}}
+
+/* первичная кнопка — тёмно-синяя (Streamlit рендерит её своим синим,
+   переопределяем на наш BLUE) */
+button[data-testid="stBaseButton-primary"] {{
+    background-color: {BLUE} !important;
+    color: #ffffff !important;
+    border: 2px solid {BLUE} !important;
+}}
+button[data-testid="stBaseButton-primary"]:hover {{
+    background-color: #164d8a !important;
+    border: 2px solid #164d8a !important;
+}}
 </style>
-""", unsafe_allow_html=True)
-
-# ── JS-окраска кнопок (запускается после рендера DOM) ──────────────────────
-# Ищем кнопки по тексту и напрямую меняем style
-active_is_summary = (p == "summary")
-st.markdown(f"""
-<script>
-(function paint() {{
-    const btns = Array.from(document.querySelectorAll('button[data-testid="stBaseButton-secondary"]'));
-    if (btns.length < 2) {{ setTimeout(paint, 60); return; }}
-    // найти по тексту
-    const summary_btn = btns.find(b => b.innerText.trim() === 'Саммари');
-    const bmo_btn     = btns.find(b => b.innerText.trim().startsWith('Влияние'));
-    if (!summary_btn || !bmo_btn) {{ setTimeout(paint, 60); return; }}
-
-    const active   = "{BLUE}";
-    const inactive = "#ffffff";
-
-    const isSum = {'true' if active_is_summary else 'false'};
-    const activeBtn   = isSum ? summary_btn : bmo_btn;
-    const inactiveBtn = isSum ? bmo_btn : summary_btn;
-
-    function applyStyle(btn, bg, color) {{
-        btn.style.setProperty('background-color', bg, 'important');
-        btn.style.setProperty('color', color, 'important');
-        btn.style.setProperty('border', '2px solid {BLUE}', 'important');
-        btn.style.setProperty('border-radius', '8px', 'important');
-        btn.style.setProperty('font-weight', '600', 'important');
-        btn.style.setProperty('white-space', 'nowrap', 'important');
-        btn.style.setProperty('padding', '9px 20px', 'important');
-    }}
-
-    applyStyle(activeBtn,   active,   '#ffffff');
-    applyStyle(inactiveBtn, inactive, active);
-
-    // наблюдаем за изменениями стилей (Streamlit может перетереть)
-    const observer = new MutationObserver(() => {{
-        applyStyle(activeBtn,   active,   '#ffffff');
-        applyStyle(inactiveBtn, inactive, active);
-    }});
-    observer.observe(activeBtn,   {{ attributes: true, attributeFilter: ['style','class'] }});
-    observer.observe(inactiveBtn, {{ attributes: true, attributeFilter: ['style','class'] }});
-}})();
-</script>
 """, unsafe_allow_html=True)
 
 # ── заголовок ──────────────────────────────────────────────────────────────
@@ -114,15 +91,25 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── кнопки ────────────────────────────────────────────────────────────────
-c1, c2, _ = st.columns([0.8, 1.4, 9])
+# ── кнопки: type="primary" для активной, "secondary" для неактивной ────────
+c1, c2, _ = st.columns([0.9, 1.5, 9])
 with c1:
-    if st.button("Саммари", key="nav_summary"):
-        st.query_params["page"] = "summary"
+    if st.button(
+        "Саммари",
+        key="nav_summary",
+        type="primary" if p == "summary" else "secondary",
+        use_container_width=True,
+    ):
+        st.session_state.page = "summary"
         st.rerun()
 with c2:
-    if st.button("Влияние на бизнес. БМО", key="nav_bmo"):
-        st.query_params["page"] = "bmo"
+    if st.button(
+        "Влияние на бизнес. БМО",
+        key="nav_bmo",
+        type="primary" if p == "bmo" else "secondary",
+        use_container_width=True,
+    ):
+        st.session_state.page = "bmo"
         st.rerun()
 
 st.markdown("<hr style='margin:10px 0 18px;border:none;border-top:1px solid #ddd;'>",
