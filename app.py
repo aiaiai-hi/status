@@ -1,7 +1,7 @@
 import streamlit as st
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="ИС Статус. Отчёт", layout="wide")
+st.set_page_config(page_title="ИС Статус. Дэшборд", layout="wide")
 
 # ── палитра ────────────────────────────────────────────────────────────────
 BLUE   = "#1D5FA5"
@@ -40,85 +40,82 @@ funnel_parts  = {
     "Устранено":              [320, 310, 220],
 }
 
-# ── глобальный CSS ─────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-/* убираем padding-top у основного блока */
-.block-container { padding-top: 1rem !important; }
-
-/* кнопки навигации */
-.nav-wrap { display: flex; gap: 0; margin-bottom: 0; }
-.nav-btn {
-    padding: 9px 32px;
-    font-size: 14px;
-    font-weight: 600;
-    border-radius: 8px;
-    border: 2px solid #1D5FA5;
-    cursor: pointer;
-    white-space: nowrap;
-    line-height: 1;
-    margin-right: 8px;
-}
-.nav-active   { background: #1D5FA5; color: #fff; }
-.nav-inactive { background: #fff;    color: #1D5FA5; }
-</style>
-""", unsafe_allow_html=True)
-
 # ── session state ──────────────────────────────────────────────────────────
 if "page" not in st.session_state:
     st.session_state.page = "summary"
 
-# ── кнопки-переключатели ──────────────────────────────────────────────────
-c1, c2, _ = st.columns([1.4, 1.8, 8])
-with c1:
-    if st.button("ИС Статус. Summary", key="btn_s"):
-        st.session_state.page = "summary"
-        st.rerun()
-with c2:
-    if st.button("Влияние на бизнес. БМО", key="btn_b"):
-        st.session_state.page = "bmo"
-        st.rerun()
+# ── глобальный CSS ─────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+.block-container { padding-top: 1.5rem !important; }
 
-# Окрашиваем кнопки через CSS nth-child по ключу активной страницы
+/* сбрасываем дефолтные стили кнопок streamlit */
+div.stButton > button {
+    border-radius: 8px !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    padding: 9px 24px !important;
+    white-space: nowrap !important;
+    width: auto !important;
+    transition: background-color 0.15s, color 0.15s !important;
+}
+div.stButton > button:focus,
+div.stButton > button:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ── заголовок ─────────────────────────────────────────────────────────────
+st.markdown(
+    f"<h1 style='font-size:28px;font-weight:700;color:{BLUE};"
+    f"margin-bottom:12px;'>ИС Статус. Дэшборд</h1>",
+    unsafe_allow_html=True,
+)
+
+# ── кнопки переключения ───────────────────────────────────────────────────
 p = st.session_state.page
+
+btn_col1, btn_col2, spacer = st.columns([1, 1.4, 8])
+
+with btn_col1:
+    st.button("Саммари", key="btn_s",
+              on_click=lambda: st.session_state.update(page="summary"))
+
+with btn_col2:
+    st.button("Влияние на бизнес. БМО", key="btn_b",
+              on_click=lambda: st.session_state.update(page="bmo"))
+
+# Окрашиваем кнопки: активная — тёмно-синяя, неактивная — белая с рамкой
 if p == "summary":
-    s_bg, s_cl, b_bg, b_cl = "#1D5FA5","#fff","#fff","#1D5FA5"
+    s_bg, s_col, b_bg, b_col = BLUE, "#fff", "#fff", BLUE
 else:
-    s_bg, s_cl, b_bg, b_cl = "#fff","#1D5FA5","#1D5FA5","#fff"
+    s_bg, s_col, b_bg, b_col = "#fff", BLUE, BLUE, "#fff"
 
 st.markdown(f"""
 <style>
-section[data-testid="stMain"] div[data-testid="column"]:nth-child(1) button {{
-    background-color:{s_bg}!important; color:{s_cl}!important;
-    border:2px solid #1D5FA5!important; border-radius:8px!important;
-    font-weight:600!important; padding:9px 18px!important;
+/* Саммари */
+div[data-testid="column"]:nth-of-type(1) div.stButton > button {{
+    background-color: {s_bg} !important;
+    color: {s_col} !important;
+    border: 2px solid {BLUE} !important;
 }}
-section[data-testid="stMain"] div[data-testid="column"]:nth-child(2) button {{
-    background-color:{b_bg}!important; color:{b_cl}!important;
-    border:2px solid #1D5FA5!important; border-radius:8px!important;
-    font-weight:600!important; padding:9px 18px!important;
+/* БМО */
+div[data-testid="column"]:nth-of-type(2) div.stButton > button {{
+    background-color: {b_bg} !important;
+    color: {b_col} !important;
+    border: 2px solid {BLUE} !important;
 }}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<hr style='margin:8px 0 16px;border:none;border-top:1px solid #ddd;'>",
+st.markdown("<hr style='margin:10px 0 18px;border:none;border-top:1px solid #ddd;'>",
             unsafe_allow_html=True)
 
 # ── хелперы ────────────────────────────────────────────────────────────────
 BG   = "rgba(0,0,0,0)"
 GRID = "rgba(128,128,128,0.15)"
-
-def L(h=210, t=14, r=8, l=42, b=32):
-    """Базовые параметры layout — возвращает dict, никогда не распаковываем с доп-ключами."""
-    return dict(
-        height=h,
-        margin=dict(t=t, b=b, l=l, r=r),
-        paper_bgcolor=BG, plot_bgcolor=BG,
-        font=dict(size=11, color="#888780"),
-        xaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
-        yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
-        showlegend=False,
-    )
 
 def metric_card(label, value, bg=BLUE):
     st.markdown(
@@ -133,66 +130,65 @@ def chart_title(txt):
         f'<p style="font-size:16px;font-weight:600;margin:0 0 2px;color:{BLUE};">{txt}</p>',
         unsafe_allow_html=True)
 
-def build_funnel_svg():
-    W, H     = 520, 460
-    label_w  = 185
-    bar_area = W - label_w - 60
-    max_val  = funnel_vals[0]
-    row_h, gap, top_m = 68, 14, 16
+def manual_layout(h=230, dual=False, legend=False):
+    """Возвращает dict. dual=True оставляет место для yaxis2 (не включает его)."""
+    d = dict(
+        height=h,
+        margin=dict(t=10, b=32, l=42, r=50 if dual else 8),
+        paper_bgcolor=BG, plot_bgcolor=BG,
+        font=dict(size=11, color="#888780"),
+        showlegend=legend,
+        xaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
+        yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
+    )
+    if legend:
+        d["legend"] = dict(orientation="h", y=1.12, x=0, font=dict(size=10))
+    return d
 
+def build_funnel_svg():
+    W, H    = 520, 460
+    label_w = 185
+    bar_area= W - label_w - 60
+    max_val = funnel_vals[0]
+    row_h, gap, top_m = 68, 14, 16
     out = []
     for i, stage in enumerate(funnel_stages):
-        total     = funnel_vals[i]
-        top_frac  = (funnel_vals[i-1] / max_val) if i > 0 else 1.0
-        bot_frac  = total / max_val
-        bw_top    = bar_area * top_frac
-        bw_bot    = bar_area * bot_frac
-        cx        = label_w + bar_area / 2
-        yt        = top_m + i * (row_h + gap)
-        yb        = yt + row_h
-
-        xl_top, xr_top = cx - bw_top/2, cx + bw_top/2
-        xl_bot, xb_bot = cx - bw_bot/2, cx + bw_bot/2
-
-        parts      = funnel_parts[stage]
-        total_p    = sum(parts)
-        cur_top    = xl_top
-        cur_bot    = xl_bot
-
+        total    = funnel_vals[i]
+        top_frac = (funnel_vals[i-1]/max_val) if i > 0 else 1.0
+        bot_frac = total/max_val
+        bw_top   = bar_area*top_frac
+        bw_bot   = bar_area*bot_frac
+        cx       = label_w + bar_area/2
+        yt       = top_m + i*(row_h+gap)
+        yb       = yt + row_h
+        xl_top   = cx - bw_top/2
+        xl_bot   = cx - bw_bot/2
+        parts    = funnel_parts[stage]
+        total_p  = sum(parts)
+        ct, cb   = xl_top, xl_bot
         for j in range(3):
-            frac_j   = parts[j] / total_p
-            sw_top   = bw_top * frac_j
-            sw_bot   = bw_bot * frac_j
-            pts      = (f"{cur_top:.1f},{yt} {cur_top+sw_top:.1f},{yt} "
-                        f"{cur_bot+sw_bot:.1f},{yb} {cur_bot:.1f},{yb}")
-            tx       = cur_top + sw_top/2
-            ty       = yt + row_h/2 + 5
-            out.append(
-                f'<polygon points="{pts}" fill="{FUNNEL_COLORS_LIST[j]}" '
-                f'opacity="0.88" stroke="white" stroke-width="1.5"/>')
-            out.append(
-                f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" '
-                f'font-size="12" font-weight="600" fill="white">{parts[j]}</text>')
-            cur_top += sw_top
-            cur_bot += sw_bot
-
-        # подпись этапа слева
+            fj   = parts[j]/total_p
+            swt  = bw_top*fj
+            swb  = bw_bot*fj
+            pts  = (f"{ct:.1f},{yt} {ct+swt:.1f},{yt} "
+                    f"{cb+swb:.1f},{yb} {cb:.1f},{yb}")
+            tx   = ct + swt/2
+            ty   = yt + row_h/2 + 5
+            out.append(f'<polygon points="{pts}" fill="{FUNNEL_COLORS_LIST[j]}" '
+                       f'opacity="0.88" stroke="white" stroke-width="1.5"/>')
+            out.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" '
+                       f'font-size="12" font-weight="600" fill="white">{parts[j]}</text>')
+            ct += swt; cb += swb
         mid_y = yt + row_h/2 + 5
-        out.append(
-            f'<text x="{label_w-10}" y="{mid_y:.1f}" text-anchor="end" '
-            f'font-size="12" fill="#444">{stage}</text>')
-        # итог справа
-        out.append(
-            f'<text x="{cx+bw_bot/2+10}" y="{mid_y:.1f}" text-anchor="start" '
-            f'font-size="13" font-weight="700" fill="#222">{total}</text>')
-
-    # легенда
-    lx, ly = label_w, H - 28
+        out.append(f'<text x="{label_w-10}" y="{mid_y:.1f}" text-anchor="end" '
+                   f'font-size="12" fill="#444">{stage}</text>')
+        out.append(f'<text x="{cx+bw_bot/2+10}" y="{mid_y:.1f}" text-anchor="start" '
+                   f'font-size="13" font-weight="700" fill="#222">{total}</text>')
+    lx, ly = label_w, H-28
     for k, (lbl, clr) in enumerate(zip(FUNNEL_LABELS, FUNNEL_COLORS_LIST)):
         out.append(f'<rect x="{lx+k*90}" y="{ly}" width="13" height="13" '
                    f'fill="{clr}" rx="3"/>')
         out.append(f'<text x="{lx+k*90+17}" y="{ly+11}" font-size="12" fill="#444">{lbl}</text>')
-
     return (f'<svg width="{W}" height="{H}" xmlns="http://www.w3.org/2000/svg" '
             f'style="font-family:sans-serif;">{"".join(out)}</svg>')
 
@@ -212,7 +208,7 @@ if p == "summary":
         with g1:
             chart_title("Динамика пораженности по неделям")
             f1 = go.Figure(go.Bar(x=weeks, y=affected, marker_color=BAR_B, opacity=.85))
-            f1.update_layout(**L())
+            f1.update_layout(**manual_layout(h=210))
             st.plotly_chart(f1, use_container_width=True)
 
         st.divider()
@@ -224,7 +220,7 @@ if p == "summary":
         with g2:
             chart_title("Доля устранённых отклонений (8 нед.)")
             f2 = go.Figure(go.Bar(x=weeks8, y=resolved, marker_color=BAR_T, opacity=.85))
-            f2.update_layout(**L())
+            f2.update_layout(**manual_layout(h=210))
             st.plotly_chart(f2, use_container_width=True)
 
     with col_r:
@@ -233,7 +229,7 @@ if p == "summary":
             chart_title("Средний счётчик повторов")
             f3 = go.Figure(go.Scatter(x=weeks, y=repeat_c, mode="lines+markers",
                                       line=dict(color=LINE_C, width=2), marker=dict(size=6)))
-            f3.update_layout(**L())
+            f3.update_layout(**manual_layout(h=210))
             st.plotly_chart(f3, use_container_width=True)
         with m3:
             metric_card("Доля устранённых", "850 шт.", TEAL)
@@ -245,7 +241,7 @@ if p == "summary":
             chart_title("Скорость устранения по неделям")
             f4 = go.Figure(go.Scatter(x=weeks, y=speed_val, mode="lines+markers",
                                       line=dict(color=LINE_A, width=2), marker=dict(size=6)))
-            f4.update_layout(**L())
+            f4.update_layout(**manual_layout(h=210))
             st.plotly_chart(f4, use_container_width=True)
         with m4:
             metric_card("Скорость устранения", "1 600 / 1 525", TEAL)
@@ -258,10 +254,10 @@ if p == "summary":
 # ══════════════════════════════════════════════════════════════════════════
 else:
     mc = st.columns(6)
-    labels_vals = [("Доля по Банку","50,1%","+0,2%"),("Целевое значение","—",None),
-                   ("Счётчик повторов","5,6 нед.","-0,2"),("Задач / хроник","—",None),
-                   ("Доля устранённых","—",None),("Скорость устранения","—",None)]
-    for col, (lbl, val, delta) in zip(mc, labels_vals):
+    lv = [("Доля по Банку","50,1%","+0,2%"),("Целевое значение","—",None),
+          ("Счётчик повторов","5,6 нед.","-0,2"),("Задач / хроник","—",None),
+          ("Доля устранённых","—",None),("Скорость устранения","—",None)]
+    for col, (lbl, val, delta) in zip(mc, lv):
         with col:
             st.metric(lbl, val, delta)
 
@@ -270,8 +266,7 @@ else:
     graphs_col, funnel_col = st.columns([11, 9], gap="large")
 
     with graphs_col:
-        # ── График 1: ВСП + задачи (двойная ось) ──
-        # Полностью ручной layout — НЕ используем L() чтобы избежать конфликта yaxis2
+        # График 1 — двойная ось (полностью ручной, без распаковки)
         chart_title("Динамика ВСП и задач по неделям")
         f5 = go.Figure()
         f5.add_trace(go.Bar(name="ВСП", x=bmo_weeks, y=bmo_vsp,
@@ -289,14 +284,13 @@ else:
             xaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
             yaxis=dict(gridcolor=GRID, tickfont=dict(size=10),
                        title=dict(text="ВСП", font=dict(size=10))),
-            yaxis2=dict(overlaying="y", side="right", gridcolor="rgba(0,0,0,0)",
-                        tickfont=dict(size=10),
+            yaxis2=dict(overlaying="y", side="right",
+                        gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10),
                         title=dict(text="Задачи", font=dict(size=10))),
         )
         st.plotly_chart(f5, use_container_width=True)
 
-        # ── График 2: доля + скорость (одна ось) ──
-        # Полностью ручной layout — НЕ используем L() со смешанными kwargs
+        # График 2 — одна ось (полностью ручной, без распаковки)
         chart_title("Доля и скорость устранения")
         f6 = go.Figure()
         f6.add_trace(go.Bar(name="Доля (%)", x=bmo_weeks, y=bmo_share,
