@@ -3,7 +3,6 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="ИС Статус. Дэшборд", layout="wide")
 
-# ── палитра ────────────────────────────────────────────────────────────────
 BLUE   = "#1D5FA5"
 TEAL   = "#0F6E56"
 BAR_B  = "#378ADD"
@@ -17,7 +16,6 @@ GRID   = "rgba(128,128,128,0.15)"
 FUNNEL_COLORS_LIST = ["#378ADD", "#1D9E75", "#BA7517"]
 FUNNEL_LABELS      = ["Тип А", "Тип Б", "Тип В"]
 
-# ── данные ─────────────────────────────────────────────────────────────────
 weeks  = ["июл 24","авг 24","сен 24","окт 24","ноя 24",
           "дек 24","янв 25","фев 25","мар 25","апр 25"]
 weeks8 = ["сен 24","окт 24","ноя 24","дек 24","янв 25","фев 25","мар 25","апр 25"]
@@ -41,60 +39,72 @@ funnel_parts  = {
     "Устранено":              [320, 310, 220],
 }
 
-# ── навигация через query_params (без rerun/мерцания) ─────────────────────
+# ── навигация ──────────────────────────────────────────────────────────────
 params = st.query_params
 p = params.get("page", "summary")
 if p not in ("summary", "bmo"):
     p = "summary"
 
-# ── CSS ────────────────────────────────────────────────────────────────────
-# Кнопки стилизуем через уникальные key → aria-label
-if p == "summary":
-    s_bg, s_col = BLUE, "#ffffff"
-    b_bg, b_col = "#ffffff", BLUE
-else:
-    s_bg, s_col = "#ffffff", BLUE
-    b_bg, b_col = BLUE, "#ffffff"
-
-st.markdown(f"""
+# ── базовый CSS ────────────────────────────────────────────────────────────
+st.markdown("""
 <style>
-.block-container {{ padding-top: 1.5rem !important; }}
-
-/* общий сброс для nav-кнопок */
-button[kind="secondary"] {{
+.block-container { padding-top: 1.5rem !important; }
+/* базовый вид для обеих nav-кнопок */
+button[data-testid="stBaseButton-secondary"] {
     border-radius: 8px !important;
     font-size: 14px !important;
     font-weight: 600 !important;
     white-space: nowrap !important;
-    transition: background-color 0.15s, color 0.15s !important;
-}}
-
-/* Саммари — key="nav_summary" → aria-label содержит текст кнопки */
-[data-testid="stBaseButton-secondary"][aria-label="Саммари"] {{
-    background-color: {s_bg} !important;
-    color: {s_col} !important;
-    border: 2px solid {BLUE} !important;
-    padding: 9px 28px !important;
-}}
-[data-testid="stBaseButton-secondary"][aria-label="Саммари"]:hover {{
-    background-color: {s_bg} !important;
-    color: {s_col} !important;
-    opacity: 0.9;
-}}
-
-/* БМО */
-[data-testid="stBaseButton-secondary"][aria-label="Влияние на бизнес. БМО"] {{
-    background-color: {b_bg} !important;
-    color: {b_col} !important;
-    border: 2px solid {BLUE} !important;
-    padding: 9px 28px !important;
-}}
-[data-testid="stBaseButton-secondary"][aria-label="Влияние на бизнес. БМО"]:hover {{
-    background-color: {b_bg} !important;
-    color: {b_col} !important;
-    opacity: 0.9;
-}}
+    min-width: 60px !important;
+    padding: 9px 20px !important;
+    border: 2px solid #1D5FA5 !important;
+    transition: none !important;
+}
 </style>
+""", unsafe_allow_html=True)
+
+# ── JS-окраска кнопок (запускается после рендера DOM) ──────────────────────
+# Ищем кнопки по тексту и напрямую меняем style
+active_is_summary = (p == "summary")
+st.markdown(f"""
+<script>
+(function paint() {{
+    const btns = Array.from(document.querySelectorAll('button[data-testid="stBaseButton-secondary"]'));
+    if (btns.length < 2) {{ setTimeout(paint, 60); return; }}
+    // найти по тексту
+    const summary_btn = btns.find(b => b.innerText.trim() === 'Саммари');
+    const bmo_btn     = btns.find(b => b.innerText.trim().startsWith('Влияние'));
+    if (!summary_btn || !bmo_btn) {{ setTimeout(paint, 60); return; }}
+
+    const active   = "{BLUE}";
+    const inactive = "#ffffff";
+
+    const isSum = {'true' if active_is_summary else 'false'};
+    const activeBtn   = isSum ? summary_btn : bmo_btn;
+    const inactiveBtn = isSum ? bmo_btn : summary_btn;
+
+    function applyStyle(btn, bg, color) {{
+        btn.style.setProperty('background-color', bg, 'important');
+        btn.style.setProperty('color', color, 'important');
+        btn.style.setProperty('border', '2px solid {BLUE}', 'important');
+        btn.style.setProperty('border-radius', '8px', 'important');
+        btn.style.setProperty('font-weight', '600', 'important');
+        btn.style.setProperty('white-space', 'nowrap', 'important');
+        btn.style.setProperty('padding', '9px 20px', 'important');
+    }}
+
+    applyStyle(activeBtn,   active,   '#ffffff');
+    applyStyle(inactiveBtn, inactive, active);
+
+    // наблюдаем за изменениями стилей (Streamlit может перетереть)
+    const observer = new MutationObserver(() => {{
+        applyStyle(activeBtn,   active,   '#ffffff');
+        applyStyle(inactiveBtn, inactive, active);
+    }});
+    observer.observe(activeBtn,   {{ attributes: true, attributeFilter: ['style','class'] }});
+    observer.observe(inactiveBtn, {{ attributes: true, attributeFilter: ['style','class'] }});
+}})();
+</script>
 """, unsafe_allow_html=True)
 
 # ── заголовок ──────────────────────────────────────────────────────────────
@@ -104,8 +114,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── кнопки (query_params — без rerun, без мерцания) ───────────────────────
-c1, c2, _ = st.columns([0.9, 1.5, 9])
+# ── кнопки ────────────────────────────────────────────────────────────────
+c1, c2, _ = st.columns([0.8, 1.4, 9])
 with c1:
     if st.button("Саммари", key="nav_summary"):
         st.query_params["page"] = "summary"
