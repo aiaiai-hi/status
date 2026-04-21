@@ -347,96 +347,122 @@ if p == "summary":
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════════════
-    # ВЕРХНИЙ БЛОК: [метрики 1,3 | график 4,5] | [метрики 36,37 + графики]
-    # ══════════════════════════════════════════════════════════════════════
-    top_left, top_right = st.columns([1, 1], gap="large")
+    n4  = get_name(df_long, "metric_smr_4")
+    n5  = get_name(df_long, "metric_smr_5")
+    n36 = get_name(df_long, "metric_smr_36")
+    n37 = get_name(df_long, "metric_smr_37")
+    n38 = get_name(df_long, "metric_smr_38")
+    n39 = get_name(df_long, "metric_smr_39")
 
-    # ── верхний левый квадрант ─────────────────────────────────────────
-    with top_left:
-        m_col, g_col = st.columns([1, 1.8], gap="small")
-        with m_col:
-            render_metric(df_long, "metric_smr_1", date_from, date_to,
-                          fmt="{:.0f}", style="blue")
-            render_metric(df_long, "metric_smr_3", date_from, date_to,
-                          fmt="{:.0f}", style="indigo")
-        with g_col:
-            chart_title("% изм. метрик 4 и 5 (3 мес.)", size=13)
-            fig45 = bar_pct_chart(
-                df_long,
+    def grouped_bar(metric_ids, colors, names, d_from, d_to, height=220):
+        fig = go.Figure()
+        for mid, color, name in zip(metric_ids, colors, names):
+            s = get_series(df_long, mid, d_from, d_to)
+            if s.empty: continue
+            x_fmt = s["date"].dt.strftime("%d.%m")
+            fig.add_trace(go.Bar(x=x_fmt, y=s["value"], name=name,
+                                 marker_color=color, opacity=0.85))
+        fig.update_layout(
+            height=height, margin=dict(t=8,b=30,l=42,r=8),
+            paper_bgcolor=BG, plot_bgcolor=BG,
+            font=dict(size=10,color="#888780"), barmode="group",
+            showlegend=True,
+            legend=dict(orientation="h",y=1.14,x=0,font=dict(size=9)),
+            xaxis=dict(gridcolor=GRID,tickfont=dict(size=9),tickangle=-30),
+            yaxis=dict(gridcolor=GRID,tickfont=dict(size=9)),
+        )
+        return fig
+
+    def bar_with_trend(metric_ids, bar_colors, line_colors, names, d_from, d_to, height=240):
+        fig = go.Figure()
+        for mid, bc, lc, name in zip(metric_ids, bar_colors, line_colors, names):
+            s = get_series(df_long, mid, d_from, d_to)
+            if s.empty: continue
+            x_fmt = s["date"].dt.strftime("%d.%m")
+            fig.add_trace(go.Bar(x=x_fmt, y=s["value"], name=name,
+                                 marker_color=bc, opacity=0.55, yaxis="y1"))
+            s2 = s.copy()
+            s2["pct"] = s2["value"].pct_change() * 100
+            s2 = s2.dropna(subset=["pct"])
+            if not s2.empty:
+                x2 = s2["date"].dt.strftime("%d.%m")
+                fig.add_trace(go.Scatter(
+                    x=x2, y=s2["pct"].round(1), name=f"{name} %",
+                    mode="lines+markers",
+                    line=dict(color=lc, width=2, dash="dot"),
+                    marker=dict(size=4), yaxis="y2"))
+        fig.update_layout(
+            height=height, margin=dict(t=10,b=30,l=42,r=42),
+            paper_bgcolor=BG, plot_bgcolor=BG,
+            font=dict(size=10,color="#888780"), barmode="group",
+            showlegend=True,
+            legend=dict(orientation="h",y=1.14,x=0,font=dict(size=9)),
+            xaxis=dict(gridcolor=GRID,tickfont=dict(size=9),tickangle=-30),
+            yaxis=dict(gridcolor=GRID,tickfont=dict(size=9)),
+            yaxis2=dict(overlaying="y",side="right",gridcolor="rgba(0,0,0,0)",
+                        tickfont=dict(size=9),ticksuffix="%",zeroline=True,
+                        zerolinecolor="rgba(128,128,128,0.3)"),
+        )
+        return fig
+
+    # Q1 верх-лево: метрики 1,3 | bar+trend 4,5
+    q1, q2 = st.columns([1, 1], gap="large")
+    with q1:
+        mc1, gc1 = st.columns([1, 1.8], gap="small")
+        with mc1:
+            render_metric(df_long, "metric_smr_1", date_from, date_to, fmt="{:.0f}", style="blue")
+            render_metric(df_long, "metric_smr_3", date_from, date_to, fmt="{:.0f}", style="indigo")
+        with gc1:
+            chart_title(f"{n4} / {n5}", size=11)
+            fig45 = bar_with_trend(
                 metric_ids=["metric_smr_4","metric_smr_5"],
-                colors=[BAR_B, BAR_T],
-                names=[get_name(df_long,"metric_smr_4"), get_name(df_long,"metric_smr_5")],
-                date_from=date_3m, date_to=max_date.date(),
-                height=230,
-            )
+                bar_colors=[BAR_B, BAR_T],
+                line_colors=[LINE_C, LINE_A],
+                names=[n4, n5],
+                d_from=date_3m, d_to=max_date.date(), height=240)
             st.plotly_chart(fig45, use_container_width=True)
 
-    # ── верхний правый квадрант: метрики 36,37 + графики ──────────────
-    with top_right:
-        g36_col, m36_col = st.columns([1.8, 1], gap="small")
-
-        with g36_col:
-            # График отклонений (метрика 1 помесячно) — линия тренда
-            chart_title("Динамика отклонений (3 мес.)", size=13)
-            fig36g = line_chart(
-                df_long,
-                metric_ids=["metric_smr_1"],
-                colors=[BAR_B],
-                names=[get_name(df_long,"metric_smr_1")],
-                date_from=date_3m, date_to=max_date.date(),
-                height=105,
-            )
+    # Q2 верх-право: метрика 36 | линия тренда отклонений
+    with q2:
+        mc2, gc2 = st.columns([1, 1.8], gap="small")
+        with mc2:
+            render_metric(df_long, "metric_smr_36", date_from, date_to, fmt="{:.1f}", style="teal")
+        with gc2:
+            chart_title(get_name(df_long,"metric_smr_1") + " (3 мес.)", size=11)
+            fig36g = line_chart(df_long, ["metric_smr_1"], [BAR_B],
+                                [get_name(df_long,"metric_smr_1")],
+                                date_3m, max_date.date(), height=130)
             st.plotly_chart(fig36g, use_container_width=True)
 
-            # График метрики 37 — линия тренда
-            chart_title("Скорость устранения (3 мес.)", size=13)
-            fig37g = line_chart(
-                df_long,
-                metric_ids=["metric_smr_37"],
-                colors=[TEAL],
-                names=[get_name(df_long,"metric_smr_37")],
-                date_from=date_3m, date_to=max_date.date(),
-                height=105,
-            )
-            st.plotly_chart(fig37g, use_container_width=True)
-
-        with m36_col:
-            render_metric(df_long, "metric_smr_36", date_from, date_to,
-                          fmt="{:.1f}", style="teal")
-            render_metric(df_long, "metric_smr_37", date_from, date_to,
-                          fmt="{:.1f}", style="purple")
-
-    st.markdown("<hr style='margin:12px 0;border:none;border-top:1px solid #eee;'>",
+    st.markdown("<hr style='margin:8px 0;border:none;border-top:1px solid #eee;'>",
                 unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════════════
-    # НИЖНИЙ БЛОК: [метрики 2, 38/39 | график 38,39]
-    # ══════════════════════════════════════════════════════════════════════
-    bot_left, bot_right = st.columns([1, 1], gap="large")
-
-    with bot_left:
-        m_col2, g_col2 = st.columns([1, 1.8], gap="small")
-        with m_col2:
-            render_metric(df_long, "metric_smr_2", date_from, date_to,
-                          fmt="{:.0f}", style="slate")
+    # Q3 низ-лево: метрики 2, 38/39 | grouped bar 38+39
+    q3, q4 = st.columns([1, 1], gap="large")
+    with q3:
+        mc3, gc3 = st.columns([1, 1.8], gap="small")
+        with mc3:
+            render_metric(df_long, "metric_smr_2", date_from, date_to, fmt="{:.0f}", style="slate")
             render_metric_pair(df_long, "metric_smr_38", "metric_smr_39",
                                date_from, date_to, fmt="{:.0f}", style="teal")
-        with g_col2:
-            chart_title("Задачи: метрики 38 и 39 (3 мес.)", size=13)
-            fig3839 = line_chart(
-                df_long,
+        with gc3:
+            chart_title(f"{n38} / {n39}", size=11)
+            fig3839 = grouped_bar(
                 metric_ids=["metric_smr_38","metric_smr_39"],
-                colors=[LINE_C, LINE_P],
-                names=[get_name(df_long,"metric_smr_38"), get_name(df_long,"metric_smr_39")],
-                date_from=date_3m, date_to=max_date.date(),
-                height=230,
-            )
+                colors=[LINE_C, LINE_P], names=[n38, n39],
+                d_from=date_3m, d_to=max_date.date(), height=240)
             st.plotly_chart(fig3839, use_container_width=True)
 
-    with bot_right:
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        st.caption("Дополнительные показатели")
+    # Q4 низ-право: метрика 37 | линия тренда скорости
+    with q4:
+        mc4, gc4 = st.columns([1, 1.8], gap="small")
+        with mc4:
+            render_metric(df_long, "metric_smr_37", date_from, date_to, fmt="{:.1f}", style="purple")
+        with gc4:
+            chart_title(n37 + " (3 мес.)", size=11)
+            fig37g = line_chart(df_long, ["metric_smr_37"], [PURPLE],
+                                [n37], date_3m, max_date.date(), height=130)
+            st.plotly_chart(fig37g, use_container_width=True)
 
     st.caption(f"Данные: Книга2.xlsx · последнее обновление {max_date.strftime('%d.%m.%Y')}")
 
