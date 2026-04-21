@@ -211,13 +211,18 @@ def line_chart(df_long, metric_ids, colors, names, date_from, date_to,
             y_vals  = s["value"]
             ysuffix = ""
         x_fmt = s["date"].dt.strftime("%d.%m")
+        # конвертируем hex в rgba для fillcolor
+        def _hex_to_rgba(h, a=0.1):
+            h = h.lstrip("#")
+            r,g,b = int(h[0:2],16), int(h[2:4],16), int(h[4:6],16)
+            return f"rgba({r},{g},{b},{a})"
+        fill_color = _hex_to_rgba(color) if color.startswith("#") else "rgba(100,100,200,0.1)"
         fig.add_trace(go.Scatter(
             x=x_fmt, y=y_vals, name=name, mode="lines+markers",
             line=dict(color=color, width=2),
             marker=dict(size=5, color=color),
             fill="tozeroy" if len(metric_ids) == 1 else None,
-            fillcolor=color.replace(")", ",0.08)").replace("rgb", "rgba") if "rgb" in color
-                      else color + "14",
+            fillcolor=fill_color,
         ))
     layout = dict(
         height=height,
