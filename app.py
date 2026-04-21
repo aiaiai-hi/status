@@ -414,25 +414,24 @@ if p == "summary":
             render_metric(df_long, "metric_smr_3", date_from, date_to, fmt="{:.0f}", style="indigo")
         with gc1:
             chart_title(f"{n4} / {n5}", size=11)
-            fig45 = bar_with_trend(
+            fig45 = grouped_bar(
                 metric_ids=["metric_smr_4","metric_smr_5"],
-                bar_colors=[BAR_B, BAR_T],
-                line_colors=[LINE_C, LINE_A],
+                colors=[BAR_B, BAR_T],
                 names=[n4, n5],
                 d_from=date_3m, d_to=max_date.date(), height=240)
             st.plotly_chart(fig45, use_container_width=True)
 
-    # Q2 верх-право: метрика 36 | линия тренда отклонений
+    # Q2 верх-право: линия тренда отклонений | метрика 36
     with q2:
-        mc2, gc2 = st.columns([1, 1.8], gap="small")
-        with mc2:
-            render_metric(df_long, "metric_smr_36", date_from, date_to, fmt="{:.1f}", style="teal")
+        gc2, mc2 = st.columns([1.8, 1], gap="small")
         with gc2:
             chart_title(get_name(df_long,"metric_smr_1") + " (3 мес.)", size=11)
             fig36g = line_chart(df_long, ["metric_smr_1"], [BAR_B],
                                 [get_name(df_long,"metric_smr_1")],
                                 date_3m, max_date.date(), height=130)
             st.plotly_chart(fig36g, use_container_width=True)
+        with mc2:
+            render_metric(df_long, "metric_smr_36", date_from, date_to, fmt="{:.1f}", style="teal")
 
     st.markdown("<hr style='margin:8px 0;border:none;border-top:1px solid #eee;'>",
                 unsafe_allow_html=True)
@@ -453,16 +452,16 @@ if p == "summary":
                 d_from=date_3m, d_to=max_date.date(), height=240)
             st.plotly_chart(fig3839, use_container_width=True)
 
-    # Q4 низ-право: метрика 37 | линия тренда скорости
+    # Q4 низ-право: линия тренда скорости | метрика 37
     with q4:
-        mc4, gc4 = st.columns([1, 1.8], gap="small")
-        with mc4:
-            render_metric(df_long, "metric_smr_37", date_from, date_to, fmt="{:.1f}", style="purple")
+        gc4, mc4 = st.columns([1.8, 1], gap="small")
         with gc4:
             chart_title(n37 + " (3 мес.)", size=11)
             fig37g = line_chart(df_long, ["metric_smr_37"], [PURPLE],
                                 [n37], date_3m, max_date.date(), height=130)
             st.plotly_chart(fig37g, use_container_width=True)
+        with mc4:
+            render_metric(df_long, "metric_smr_37", date_from, date_to, fmt="{:.1f}", style="purple")
 
     st.caption(f"Данные: Книга2.xlsx · последнее обновление {max_date.strftime('%d.%m.%Y')}")
 
