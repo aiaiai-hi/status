@@ -210,7 +210,8 @@ def line_chart(df_long, metric_ids, colors, names, date_from, date_to,
         else:
             y_vals  = s["value"]
             ysuffix = ""
-        x_fmt = s["date"].dt.strftime("%d.%m")
+        # используем реальные даты как категории
+        x_dates = s["date"].dt.strftime("%d.%m.%y").tolist()
         # конвертируем hex в rgba для fillcolor
         def _hex_to_rgba(h, a=0.1):
             h = h.lstrip("#")
@@ -218,20 +219,22 @@ def line_chart(df_long, metric_ids, colors, names, date_from, date_to,
             return f"rgba({r},{g},{b},{a})"
         fill_color = _hex_to_rgba(color) if color.startswith("#") else "rgba(100,100,200,0.1)"
         fig.add_trace(go.Scatter(
-            x=x_fmt, y=y_vals, name=name, mode="lines+markers",
+            x=x_dates, y=y_vals, name=name, mode="lines+markers",
             line=dict(color=color, width=2),
             marker=dict(size=5, color=color),
             fill="tozeroy" if len(metric_ids) == 1 else None,
             fillcolor=fill_color,
+            hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y:,.2f}<extra></extra>",
         ))
     layout = dict(
         height=height,
-        margin=dict(t=8, b=30, l=42, r=8),
+        margin=dict(t=8, b=50, l=42, r=8),
         paper_bgcolor=BG, plot_bgcolor=BG,
         font=dict(size=10, color="#888780"),
         showlegend=len(metric_ids) > 1,
         legend=dict(orientation="h", y=1.1, x=0, font=dict(size=10)),
-        xaxis=dict(gridcolor=GRID, tickfont=dict(size=9)),
+        xaxis=dict(type="category", gridcolor=GRID,
+                   tickfont=dict(size=9), tickangle=-35),
         yaxis=dict(gridcolor=GRID, tickfont=dict(size=9), ticksuffix=ysuffix,
                    zeroline=pct_change,
                    zerolinecolor="rgba(128,128,128,0.3)"),
@@ -359,16 +362,28 @@ if p == "summary":
         for mid, color, name in zip(metric_ids, colors, names):
             s = get_series(df_long, mid, d_from, d_to)
             if s.empty: continue
-            x_fmt = s["date"].dt.strftime("%d.%m")
-            fig.add_trace(go.Bar(x=x_fmt, y=s["value"], name=name,
-                                 marker_color=color, opacity=0.85))
+            # используем строки дат как категории, чтобы Plotly не путал с числами
+            x_labels = s["date"].dt.strftime("%d.%m.%y").tolist()
+            fig.add_trace(go.Bar(
+                x=x_labels, y=s["value"], name=name,
+                marker_color=color, opacity=0.9,
+                hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y:,.0f}<extra></extra>",
+            ))
         fig.update_layout(
-            height=height, margin=dict(t=8,b=30,l=42,r=8),
+            height=height, margin=dict(t=8,b=50,l=42,r=8),
             paper_bgcolor=BG, plot_bgcolor=BG,
-            font=dict(size=10,color="#888780"), barmode="group",
+            font=dict(size=10,color="#888780"),
+            barmode="group",
+            bargap=0.2,       # зазор между группами
+            bargroupgap=0.05, # зазор внутри группы
             showlegend=True,
             legend=dict(orientation="h",y=1.14,x=0,font=dict(size=9)),
-            xaxis=dict(gridcolor=GRID,tickfont=dict(size=9),tickangle=-30),
+            xaxis=dict(
+                type="category",  # строго категориальная ось
+                gridcolor=GRID, tickfont=dict(size=9), tickangle=-35,
+                tickmode="array",
+                tickvals=list(range(len(s["date"]))),
+            ),
             yaxis=dict(gridcolor=GRID,tickfont=dict(size=9)),
         )
         return fig
