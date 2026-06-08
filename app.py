@@ -2,6 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 from datetime import date, timedelta
+from io import BytesIO
 
 st.set_page_config(page_title="ИС Статус. Дэшборд", layout="wide")
 
@@ -209,7 +210,7 @@ st.markdown(
 )
 
 # ── навигация ──────────────────────────────────────────────────────────────
-n1, n2, n3, _ = st.columns([0.9, 1.9, 1.3, 5.7])
+n1, n2, _ = st.columns([0.9, 1.9, 7])
 with n1:
     if st.button("Саммари", key="nav_s",
                  type="primary" if p == "summary" else "secondary",
@@ -220,21 +221,6 @@ with n2:
                  type="primary" if p == "bmo" else "secondary",
                  use_container_width=True):
         st.session_state.page = "bmo"; st.rerun()
-with n3:
-    if st.button("🔄 Обновить данные", key="nav_refresh",
-                 type="secondary", use_container_width=True):
-        try:
-            if os.path.exists(XLSX_PATH):
-                _convert_xlsx_to_json()
-                st.success(f"Данные обновлены из {XLSX_PATH}")
-            elif os.path.exists(JSON_PATH):
-                st.info(f"{XLSX_PATH} не найден — перечитан существующий {JSON_PATH}")
-            else:
-                st.error(f"Нет ни {XLSX_PATH}, ни {JSON_PATH} в папке приложения")
-        except Exception as e:
-            st.error(f"Ошибка обновления: {e}")
-        st.cache_data.clear()
-        st.rerun()
 
 st.markdown("<hr style='margin:10px 0 14px;border:none;border-top:1px solid #E0E0DA;'>",
             unsafe_allow_html=True)
@@ -343,12 +329,111 @@ def get_weeks_in_period(df_long, date_from, date_to):
     return dates
 
 
+def build_excel_export(df_long, metric_ids, date_from, date_to, sheet_name="Summary"):
+    """Сборка Excel: лист данных + лист саммари + лист сравнения с предыдущим периодом."""
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as wr:
+        # Лист 1: сырые данные за период
+        mask = ((df_long["metric_id"].isin(metric_ids)) &
+                (df_long["date_end"] >= pd.Timestamp(date_from)) &
+                (df_long["date_end"] <= pd.Timestamp(date_to)))
+        raw = df_long[mask][["date_end", "metric_id", "metric_name", "value_s"]].copy()
+        raw["date_end"] = raw["date_end"].dt.strftime("%d.%m.%Y")
+        raw.columns = ["Дата", "ID метрики", "Название метрики", "Значение"]
+        raw.to_excel(wr, sheet_name="Данные", index=False)
+
+        # Лист 2: саммари
+        summary_rows = []
+        for mid in metric_ids:
+            cur = get_period_value(df_long, mid, date_from, date_to)
+            if cur is None:
+                continue
+            name = get_metric_name(df_long, mid)
+            summary_rows.append({"ID метрики": mid, "Метрика": name, "Значение": cur})
+        if summary_rows:
+            pd.DataFrame(summary_rows).to_excel(wr, sheet_name="Саммари", index=False)
+
+        # Лист 3: сравнение с предыдущим периодом
+        prev_to   = pd.Timestamp(date_from) - timedelta(days=1)
+        prev_from = prev_to - (pd.Timestamp(date_to) - pd.Timestamp(date_from))
+        comp_rows = []
+        for mid in metric_ids:
+            cur = get_period_value(df_long, mid, date_from, date_to)
+            prev = get_period_value(df_long, mid, prev_from.date(), prev_to.date())
+            comp_rows.append({
+                "ID метрики": mid,
+                "Метрика":   get_metric_name(df_long, mid),
+                "Текущий период":     cur,
+                "Предыдущий период":  prev,
+                "Δ абс.":   (cur - prev) if (cur is not None and prev is not None) else None,
+                "Δ %":      ((cur - prev) / prev * 100) if (cur is not None and prev not in (None, 0)) else None,
+            })
+        meta = pd.DataFrame([
+            {"Параметр": "Текущий период с",    "Значение": pd.Timestamp(date_from).strftime("%d.%m.%Y")},
+            {"Параметр": "Текущий период по",   "Значение": pd.Timestamp(date_to).strftime("%d.%m.%Y")},
+            {"Параметр": "Сравниваемый период с",  "Значение": prev_from.strftime("%d.%m.%Y")},
+            {"Параметр": "Сравниваемый период по", "Значение": prev_to.strftime("%d.%m.%Y")},
+        ])
+        meta.to_excel(wr, sheet_name="Сравнение", index=False, startrow=0)
+        pd.DataFrame(comp_rows).to_excel(wr, sheet_name="Сравнение", index=False, startrow=6)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def render_weeks_buttons(df_long, date_from, date_to, key_prefix):
+    """Рендерит ряд кнопок дат + 'Весь период'. Возвращает (eff_from, eff_to)."""
+    weeks_in_period = get_weeks_in_period(df_long, date_from, date_to)
+    state_key = f"selected_week_{key_prefix}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = "all"
+
+    if not weeks_in_period:
+        return date_from, date_to
+
+    st.markdown(
+        f"<p style='font-size:11px;color:{GREY_TXT};margin:0 0 4px;font-weight:600;'>"
+        f"Недели в периоде:</p>",
+        unsafe_allow_html=True
+    )
+    items = [("all", "Весь период")] + [(d.strftime("%Y-%m-%d"), d.strftime("%d.%m")) for d in weeks_in_period[:9]]
+    cols_w = st.columns(len(items))
+    for i, (val, lbl) in enumerate(items):
+        with cols_w[i]:
+            if st.button(lbl, key=f"{key_prefix}_wk_{val}",
+                         type="primary" if st.session_state[state_key] == val else "secondary",
+                         use_container_width=True):
+                st.session_state[state_key] = val
+                st.rerun()
+
+    if st.session_state[state_key] != "all":
+        try:
+            wd = pd.Timestamp(st.session_state[state_key]).date()
+            return wd, wd
+        except Exception:
+            return date_from, date_to
+    return date_from, date_to
+
+
+def render_export_button(df_long, metric_ids, date_from, date_to, key, file_label):
+    """Кнопка скачивания Excel."""
+    xlsx_bytes = build_excel_export(df_long, metric_ids, date_from, date_to)
+    fname = f"{file_label}_{pd.Timestamp(date_from).strftime('%Y%m%d')}_{pd.Timestamp(date_to).strftime('%Y%m%d')}.xlsx"
+    st.download_button(
+        label="⬇ Скачать Excel",
+        data=xlsx_bytes,
+        file_name=fname,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=key,
+        use_container_width=True,
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # СТРАНИЦА: САММАРИ
 # ══════════════════════════════════════════════════════════════════════════
 if p == "summary":
-    # ── даты ───────────────────────────────────────────────────────────
-    d1c, d2c, _ = st.columns([1.2, 1.2, 6])
+    # ── даты + кнопки недель в одной строке ────────────────────────────
+    d1c, d2c, weeks_col = st.columns([1.1, 1.1, 6.8])
     with d1c:
         date_from = st.date_input("Период с", value=default_from,
                                   min_value=min_d, max_value=max_d,
@@ -357,70 +442,18 @@ if p == "summary":
         date_to = st.date_input("по", value=max_d,
                                 min_value=min_d, max_value=max_d,
                                 format="DD.MM.YYYY", key="d_to")
-
-    st.markdown(
-        f"<p style='font-size:11px;color:{GREY_TXT};margin:4px 0 8px;'>"
-        f"Доступные даты в данных: {len(available_dates)} точек, "
-        f"с <b>{min_d.strftime('%d.%m.%Y')}</b> по <b>{max_d.strftime('%d.%m.%Y')}</b></p>",
-        unsafe_allow_html=True
-    )
-
-    # ── кнопки недель из date_end в выбранном периоде ──────────────────
-    weeks_in_period = get_weeks_in_period(df, date_from, date_to)
-    if weeks_in_period:
-        if "selected_week" not in st.session_state:
-            st.session_state.selected_week = "all"
-
-        st.markdown(
-            f"<p style='font-size:11px;color:{GREY_TXT};margin:8px 0 4px;font-weight:600;'>"
-            f"Недели в периоде:</p>",
-            unsafe_allow_html=True
-        )
-        # +1 кнопка "Весь период"
-        n_btns = len(weeks_in_period) + 1
-        cols_w = st.columns(min(n_btns, 10))
-        # кнопка "весь период"
-        with cols_w[0]:
-            if st.button("Весь период",
-                         key="wk_all",
-                         type="primary" if st.session_state.selected_week == "all" else "secondary",
-                         use_container_width=True):
-                st.session_state.selected_week = "all"
-                st.rerun()
-        for i, wd in enumerate(weeks_in_period[:9]):  # макс 9 недель в кнопках
-            with cols_w[i+1]:
-                wkey = wd.strftime("%Y-%m-%d")
-                if st.button(wd.strftime("%d.%m"),
-                             key=f"wk_{wkey}",
-                             type="primary" if st.session_state.selected_week == wkey else "secondary",
-                             use_container_width=True):
-                    st.session_state.selected_week = wkey
-                    st.rerun()
-
-        # Эффективный период: если выбрана неделя — только она
-        if st.session_state.selected_week != "all":
-            try:
-                wd = pd.Timestamp(st.session_state.selected_week).date()
-                eff_from, eff_to = wd, wd
-            except Exception:
-                eff_from, eff_to = date_from, date_to
-        else:
-            eff_from, eff_to = date_from, date_to
-    else:
-        eff_from, eff_to = date_from, date_to
+    with weeks_col:
+        eff_from, eff_to = render_weeks_buttons(df, date_from, date_to, "sum")
 
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
-    # ── получаем значения и динамику для метрик ───────────────────────
-    # все берутся из столбца value_s
+    # ── получаем значения метрик из value_s ────────────────────────────
     v_1   = get_period_value(df, "metric_smr_1",  eff_from, eff_to)
     v_11  = get_period_value(df, "metric_smr_11", eff_from, eff_to)
     v_3   = get_period_value(df, "metric_smr_3",  eff_from, eff_to)
     v_2,  p_2,  d_2  = get_delta(df, "metric_smr_2",  eff_from, eff_to)
-    v_36, p_36, d_36 = get_delta(df, "metric_smr_36", eff_from, eff_to)
-    v_37, p_37, d_37 = get_delta(df, "metric_smr_37", eff_from, eff_to)
 
-    # для метрики 1: дельта в абсолютном значении, доля от 11
+    # Метрика 1: дельта в абсолюте к предыдущей неделе, доля от 11
     prev_v_1 = get_period_value(
         df, "metric_smr_1",
         (pd.Timestamp(eff_from) - timedelta(weeks=1)).date(),
@@ -435,12 +468,16 @@ if p == "summary":
     share_1 = (v_1 / v_11 * 100) if (v_1 is not None and v_11 and v_11 != 0) else None
     right_1 = f"{share_1:.1f}% от {fmt_num(v_11)}" if share_1 is not None else None
 
-    # для метрики 3: дельта обычная, доля от 1000
+    # Метрика 3: доля от 3000
     _, p_3, d_3 = get_delta(df, "metric_smr_3", eff_from, eff_to)
-    share_3 = (v_3 / 1000 * 100) if v_3 is not None else None
-    right_3 = f"{share_3:.1f}% от 1000" if share_3 is not None else None
+    share_3 = (v_3 / 3000 * 100) if v_3 is not None else None
+    right_3 = f"{share_3:.1f}% от 3000" if share_3 is not None else None
 
-    # для пары 38/39: динамика к среднему за 3 недели до eff_from
+    # Метрика 2: доля от 1275
+    share_2 = (v_2 / 1275 * 100) if v_2 is not None else None
+    right_2 = f"{share_2:.1f}% от 1275" if share_2 is not None else None
+
+    # Пара 38/39: динамика к среднему за 3 недели до eff_from
     v_38, p_38_avg, d_38_avg = get_delta_vs_avg(df, "metric_smr_38", eff_from, eff_to, 3)
     v_39, p_39_avg, d_39_avg = get_delta_vs_avg(df, "metric_smr_39", eff_from, eff_to, 3)
 
@@ -454,7 +491,7 @@ if p == "summary":
                         fmt_num(v_1),
                         delta=delta_1_str, delta_dir=dir_1, style="dark-green",
                         right_text=right_1, delta_label="к пред. неделе")
-            metric_card("Количество человек с отклонениями",
+            metric_card("Количество сотрудников с отклонениями",
                         fmt_num(v_3),
                         delta=fmt_delta(p_3), delta_dir=d_3 or "up", style="green",
                         right_text=right_3, delta_label="к пред. периоду")
@@ -463,7 +500,6 @@ if p == "summary":
             df3m_from = (pd.Timestamp(eff_to) - pd.DateOffset(months=3)).date()
             s_4 = get_series(df, "metric_smr_4", df3m_from, eff_to)
             s_5 = get_series(df, "metric_smr_5", df3m_from, eff_to)
-            # объединённый набор недель
             all_weeks = sorted(set(s_4["date_end"].tolist()) | set(s_5["date_end"].tolist()))
             x_lbl = [d.strftime("%d.%m") for d in all_weeks]
             map_4 = dict(zip(s_4["date_end"], s_4["value_s"]))
@@ -473,16 +509,12 @@ if p == "summary":
             n4 = get_metric_name(df, "metric_smr_4")
             n5 = get_metric_name(df, "metric_smr_5")
             f1 = go.Figure()
-            f1.add_trace(go.Bar(
-                name=n4, x=x_lbl, y=y_4,
+            f1.add_trace(go.Bar(name=n4, x=x_lbl, y=y_4,
                 marker_color=DARK_GREEN, opacity=0.9,
-                hovertemplate="<b>%{x}</b><br>"+n4+": %{y:.2f}<extra></extra>",
-            ))
-            f1.add_trace(go.Bar(
-                name=n5, x=x_lbl, y=y_5,
+                hovertemplate="<b>%{x}</b><br>"+n4+": %{y:.2f}<extra></extra>"))
+            f1.add_trace(go.Bar(name=n5, x=x_lbl, y=y_5,
                 marker_color=YELLOW, opacity=0.9,
-                hovertemplate="<b>%{x}</b><br>"+n5+": %{y:.2f}<extra></extra>",
-            ))
+                hovertemplate="<b>%{x}</b><br>"+n5+": %{y:.2f}<extra></extra>"))
             f1.update_layout(
                 height=220, margin=dict(t=14, b=32, l=42, r=8),
                 paper_bgcolor=BG, plot_bgcolor=BG,
@@ -496,30 +528,44 @@ if p == "summary":
             st.plotly_chart(f1, use_container_width=True, config={"displayModeBar": False})
 
     with q2:
+        # второй верхний график — Качество (повтор основного с метриками 10/7)
         g, m = st.columns([2.2, 1], gap="small")
         with g:
-            chart_title("Средний счётчик повторов")
-            x_lbl, y_vals = monthly_avg(df, "metric_smr_36", eff_to, 6)
-            f2 = go.Figure(go.Scatter(
-                x=x_lbl, y=y_vals,
-                mode="lines+markers",
-                line=dict(color=GREEN, width=2.5),
-                marker=dict(size=7, color=GREEN),
-                fill="tozeroy", fillcolor="rgba(42,126,46,0.14)",
-                hovertemplate="<b>%{x}</b><br>Значение: %{y:.2f}<extra></extra>",
-            ))
-            f2.update_layout(
-                height=220, margin=dict(t=14, b=32, l=42, r=8),
+            chart_title("Качество работы с отклонениями: пораженность и счётчик повторов")
+            df3m_from = (pd.Timestamp(eff_to) - pd.DateOffset(months=3)).date()
+            s_10 = get_series(df, "metric_smr_10", df3m_from, eff_to)
+            s_7  = get_series(df, "metric_smr_7",  df3m_from, eff_to)
+            all_w = sorted(set(s_10["date_end"].tolist()) | set(s_7["date_end"].tolist()))
+            x_lbl = [d.strftime("%d.%m") for d in all_w]
+            map_10 = dict(zip(s_10["date_end"], s_10["value_s"]))
+            map_7  = dict(zip(s_7["date_end"],  s_7["value_s"]))
+            y_10 = [map_10.get(d) for d in all_w]
+            y_7  = [map_7.get(d)  for d in all_w]
+            n10 = get_metric_name(df, "metric_smr_10")
+            n7  = get_metric_name(df, "metric_smr_7")
+            fX = go.Figure()
+            fX.add_trace(go.Bar(name=n10, x=x_lbl, y=y_10,
+                marker_color=GREEN, opacity=0.9, yaxis="y1",
+                hovertemplate="<b>%{x}</b><br>"+n10+": %{y:.2f}<extra></extra>"))
+            fX.add_trace(go.Bar(name=n7, x=x_lbl, y=y_7,
+                marker_color=YELLOW, opacity=0.9, yaxis="y2",
+                hovertemplate="<b>%{x}</b><br>"+n7+": %{y:.2f}<extra></extra>"))
+            fX.update_layout(
+                height=220, margin=dict(t=14, b=32, l=42, r=46),
                 paper_bgcolor=BG, plot_bgcolor=BG,
-                font=dict(size=10, color=GREY_TXT), showlegend=False,
+                font=dict(size=10, color=GREY_TXT),
+                barmode="group", bargap=0.25, bargroupgap=0.05,
+                showlegend=True,
+                legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
                 xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
                 yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
+                yaxis2=dict(overlaying="y", side="right",
+                            gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10)),
             )
-            st.plotly_chart(f2, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fX, use_container_width=True, config={"displayModeBar": False})
+        # правая плашка убрана по требованию — оставляем пустое место чтобы не ломать сетку
         with m:
-            metric_card("Доля устранённых отклонений",
-                        fmt_num(v_36, suffix="%", decimals=1),
-                        fmt_delta(p_36), d_36 or "up", "orange")
+            st.markdown("<div style='height:108px;'></div>", unsafe_allow_html=True)
 
     st.markdown("<hr style='margin:8px 0 12px;border:none;border-top:1px solid #E0E0DA;'>",
                 unsafe_allow_html=True)
@@ -531,7 +577,9 @@ if p == "summary":
         m, g = st.columns([1, 2.2], gap="small")
         with m:
             metric_card("Кол-во ВСП с отклонениями",
-                        fmt_num(v_2), fmt_delta(p_2), d_2 or "up", "black")
+                        fmt_num(v_2),
+                        delta=fmt_delta(p_2), delta_dir=d_2 or "up", style="black",
+                        right_text=right_2, delta_label="к пред. периоду")
             metric_pair("Кол-во родит.задач / экскалированных",
                         fmt_num(v_38), fmt_delta(p_38_avg),
                         fmt_num(v_39), fmt_delta(p_39_avg),
@@ -550,16 +598,12 @@ if p == "summary":
             n38 = get_metric_name(df, "metric_smr_38")
             n39 = get_metric_name(df, "metric_smr_39")
             f3 = go.Figure()
-            f3.add_trace(go.Bar(
-                name=n38, x=x_lbl, y=y_38,
+            f3.add_trace(go.Bar(name=n38, x=x_lbl, y=y_38,
                 marker_color=DARK_GREEN, opacity=0.9,
-                hovertemplate="<b>%{x}</b><br>"+n38+": %{y:,.0f}<extra></extra>",
-            ))
-            f3.add_trace(go.Bar(
-                name=n39, x=x_lbl, y=y_39,
+                hovertemplate="<b>%{x}</b><br>"+n38+": %{y:,.0f}<extra></extra>"))
+            f3.add_trace(go.Bar(name=n39, x=x_lbl, y=y_39,
                 marker_color=LIME, opacity=0.9,
-                hovertemplate="<b>%{x}</b><br>"+n39+": %{y:,.0f}<extra></extra>",
-            ))
+                hovertemplate="<b>%{x}</b><br>"+n39+": %{y:,.0f}<extra></extra>"))
             f3.update_layout(
                 height=220, margin=dict(t=14, b=32, l=42, r=8),
                 paper_bgcolor=BG, plot_bgcolor=BG,
@@ -573,39 +617,28 @@ if p == "summary":
             st.plotly_chart(f3, use_container_width=True, config={"displayModeBar": False})
 
     with q4:
-        g, m = st.columns([2.2, 1], gap="small")
-        with g:
-            chart_title(get_metric_name(df, "metric_smr_37"))
-            x_lbl, y_vals = monthly_avg(df, "metric_smr_37", eff_to, 6)
-            f4 = go.Figure(go.Scatter(
-                x=x_lbl, y=y_vals,
-                mode="lines+markers",
-                line=dict(color=ORANGE, width=2.5),
-                marker=dict(size=7, color=ORANGE),
-                fill="tozeroy", fillcolor="rgba(224,123,27,0.14)",
-                hovertemplate="<b>%{x}</b><br>Значение: %{y:.2f}<extra></extra>",
-            ))
-            f4.update_layout(
-                height=220, margin=dict(t=14, b=32, l=42, r=8),
-                paper_bgcolor=BG, plot_bgcolor=BG,
-                font=dict(size=10, color=GREY_TXT), showlegend=False,
-                xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
-                yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
-            )
-            st.plotly_chart(f4, use_container_width=True, config={"displayModeBar": False})
-        with m:
-            metric_card("Скорость устранения",
-                        fmt_num(v_37, suffix=" нед.", decimals=1),
-                        fmt_delta(p_37), d_37 or "up", "lime")
+        # правая нижняя клетка — пустая (все плашки и графики из неё удалены)
+        st.markdown("<div style='height:228px;'></div>", unsafe_allow_html=True)
 
-    st.caption(f"Данные: metrics.xlsx · последняя дата {max_d.strftime('%d.%m.%Y')}")
+    # ── кнопка скачивания ──────────────────────────────────────────────
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    dl_col, _ = st.columns([1.5, 8.5])
+    with dl_col:
+        render_export_button(
+            df,
+            ["metric_smr_1","metric_smr_11","metric_smr_3","metric_smr_2",
+             "metric_smr_38","metric_smr_39","metric_smr_4","metric_smr_5",
+             "metric_smr_10","metric_smr_7"],
+            eff_from, eff_to,
+            key="dl_summary", file_label="Саммари"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════
 # СТРАНИЦА: БМО
 # ══════════════════════════════════════════════════════════════════════════
 else:
-    d1c, d2c, _ = st.columns([1.2, 1.2, 6])
+    d1c, d2c, weeks_col = st.columns([1.1, 1.1, 6.8])
     with d1c:
         date_from = st.date_input("Период с", value=default_from,
                                   min_value=min_d, max_value=max_d,
@@ -614,20 +647,22 @@ else:
         date_to = st.date_input("по", value=max_d,
                                 min_value=min_d, max_value=max_d,
                                 format="DD.MM.YYYY", key="bd_to")
+    with weeks_col:
+        eff_from_b, eff_to_b = render_weeks_buttons(df, date_from, date_to, "bmo")
 
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
-    # ── значения метрик для БМО ────────────────────────────────────────
-    v_46, p_46, d_46 = get_delta(df, "metric_smr_46", date_from, date_to)  # Доля по Банку
-    v_45             = get_period_value(df, "metric_smr_45", date_from, date_to)  # Целевое значение
-    v_40, p_40, d_40 = get_delta(df, "metric_smr_40", date_from, date_to)  # родит. задачи
-    v_41, p_41, d_41 = get_delta(df, "metric_smr_41", date_from, date_to)  # эскалированные
-    v_34, p_34, d_34 = get_delta(df, "metric_smr_34", date_from, date_to)  # доля устраненных
-    v_10, p_10, d_10 = get_delta(df, "metric_smr_10", date_from, date_to)  # пораженность
-    v_7,  p_7,  d_7  = get_delta(df, "metric_smr_7",  date_from, date_to)  # средн. счётчик повторов
-    v_9              = get_period_value(df, "metric_smr_9", date_from, date_to)  # чел.
-    v_8              = get_period_value(df, "metric_smr_8", date_from, date_to)  # ВСП
-    v_35, p_35, d_35 = get_delta(df, "metric_smr_35", date_from, date_to)  # скорость устранения
+    # ── значения метрик БМО (все из value_s) ───────────────────────────
+    v_46, p_46, d_46 = get_delta(df, "metric_smr_46", eff_from_b, eff_to_b)  # Доля по Банку
+    v_45             = get_period_value(df, "metric_smr_45", eff_from_b, eff_to_b)  # Целевое
+    v_40, p_40, d_40 = get_delta(df, "metric_smr_40", eff_from_b, eff_to_b)
+    v_41, p_41, d_41 = get_delta(df, "metric_smr_41", eff_from_b, eff_to_b)
+    v_34, p_34, d_34 = get_delta(df, "metric_smr_34", eff_from_b, eff_to_b)
+    v_10, p_10, d_10 = get_delta(df, "metric_smr_10", eff_from_b, eff_to_b)
+    v_7,  p_7,  d_7  = get_delta(df, "metric_smr_7",  eff_from_b, eff_to_b)
+    v_9              = get_period_value(df, "metric_smr_9", eff_from_b, eff_to_b)
+    v_8              = get_period_value(df, "metric_smr_8", eff_from_b, eff_to_b)
+    v_35, p_35, d_35 = get_delta(df, "metric_smr_35", eff_from_b, eff_to_b)
 
     def bmo_card(label, value, delta, delta_dir, accent):
         col = GREEN if delta_dir == "up" else ORANGE
@@ -647,14 +682,14 @@ else:
                 if v_9 is not None and v_8 is not None else "—")
 
     cards = [
-        ("Доля по Банку",             fmt_num(v_46, "%", 1),                    fmt_delta(p_46), d_46 or "up", GREEN),
-        ("Целевое значение",          fmt_num(v_45, "%", 1) if v_45 is not None else "—", "цель", "up", "#5F5E5A"),
-        ("Кол-во родит.задач / эскал.", qty_pair,                              fmt_delta(p_40), d_40 or "up", YELLOW),
-        ("Доля устранённых",          fmt_num(v_34, "%", 1),                    fmt_delta(p_34), d_34 or "up", LIME),
-        ("Пораженность",              fmt_num(v_10, "%", 1),                    fmt_delta(p_10), d_10 or "up", GREEN),
-        ("Средний счётчик повторов",  fmt_num(v_7, "", 2),                      fmt_delta(p_7),  d_7 or "up",  ORANGE),
-        ("Кол-во объектов чел / ВСП", chel_vsp,                                "",              "up",         DARK_GREEN),
-        ("Скорость устранения",       fmt_num(v_35, " нед.", 1),                fmt_delta(p_35), d_35 or "up", BLACK),
+        ("Доля по Банку",              fmt_num(v_46, "%", 1),                    fmt_delta(p_46), d_46 or "up", GREEN),
+        ("Целевое значение",           fmt_num(v_45, "%", 1) if v_45 is not None else "—", "цель", "up", "#5F5E5A"),
+        ("Кол-во родит.задач / эскал.", qty_pair,                                fmt_delta(p_40), d_40 or "up", YELLOW),
+        ("Доля устранённых",           fmt_num(v_34, "%", 1),                    fmt_delta(p_34), d_34 or "up", LIME),
+        ("Пораженность",               fmt_num(v_10, "%", 1),                    fmt_delta(p_10), d_10 or "up", GREEN),
+        ("Средний счётчик повторов",   fmt_num(v_7, "", 2),                      fmt_delta(p_7),  d_7 or "up",  ORANGE),
+        ("Кол-во объектов: Сотрудников / ВСП", chel_vsp,                          "",              "up",         DARK_GREEN),
+        ("Скорость устранения",        fmt_num(v_35, " нед.", 1),                fmt_delta(p_35), d_35 or "up", BLACK),
     ]
     cols = st.columns(8)
     for c_, (lbl, v, d, dr, ac) in zip(cols, cards):
@@ -668,8 +703,8 @@ else:
     with g_col:
         # ── График 1: Доля БМО vs Целевое значение ──
         chart_title("Доля по Банку vs Целевое значение")
-        s_46 = get_series(df, "metric_smr_46", date_from, date_to)
-        s_45 = get_series(df, "metric_smr_45", date_from, date_to)
+        s_46 = get_series(df, "metric_smr_46", eff_from_b, eff_to_b)
+        s_45 = get_series(df, "metric_smr_45", eff_from_b, eff_to_b)
         all_d = sorted(set(s_46["date_end"].tolist()) | set(s_45["date_end"].tolist()))
         x_lbl = [d.strftime("%d.%m") for d in all_d]
         map_46 = dict(zip(s_46["date_end"], s_46["value_s"]))
@@ -677,18 +712,14 @@ else:
         y_46 = [map_46.get(d) for d in all_d]
         y_45 = [map_45.get(d) for d in all_d]
         f5 = go.Figure()
-        f5.add_trace(go.Bar(
-            name="Доля БМО, %", x=x_lbl, y=y_46,
+        f5.add_trace(go.Bar(name="Доля БМО, %", x=x_lbl, y=y_46,
             marker_color=GREEN, opacity=0.85,
-            hovertemplate="<b>%{x}</b><br>Доля БМО: %{y:.1f}%<extra></extra>",
-        ))
-        f5.add_trace(go.Scatter(
-            name="Целевое значение", x=x_lbl, y=y_45,
+            hovertemplate="<b>%{x}</b><br>Доля БМО: %{y:.1f}%<extra></extra>"))
+        f5.add_trace(go.Scatter(name="Целевое значение", x=x_lbl, y=y_45,
             mode="lines+markers",
             line=dict(color=ORANGE, width=2.5, dash="dash"),
             marker=dict(size=6, color=ORANGE),
-            hovertemplate="<b>%{x}</b><br>Цель: %{y:.1f}%<extra></extra>",
-        ))
+            hovertemplate="<b>%{x}</b><br>Цель: %{y:.1f}%<extra></extra>"))
         f5.update_layout(
             height=210, margin=dict(t=10, b=30, l=42, r=8),
             paper_bgcolor=BG, plot_bgcolor=BG,
@@ -701,86 +732,10 @@ else:
         )
         st.plotly_chart(f5, use_container_width=True, config={"displayModeBar": False})
 
-        # ── График 2: Кол-во задач vs Доля устранённых ──
-        chart_title("Количество задач и доля устранённых")
-        s_40 = get_series(df, "metric_smr_40", date_from, date_to)
-        s_34 = get_series(df, "metric_smr_34", date_from, date_to)
-        all_d = sorted(set(s_40["date_end"].tolist()) | set(s_34["date_end"].tolist()))
-        x_lbl = [d.strftime("%d.%m") for d in all_d]
-        map_40 = dict(zip(s_40["date_end"], s_40["value_s"]))
-        map_34 = dict(zip(s_34["date_end"], s_34["value_s"]))
-        y_40 = [map_40.get(d) for d in all_d]
-        # абс. кол-во устранённых = задачи * доля/100
-        y_resolved = [(map_40[d] * map_34[d] / 100) if (d in map_40 and d in map_34) else None for d in all_d]
-        f6 = go.Figure()
-        f6.add_trace(go.Bar(
-            name="Всего задач", x=x_lbl, y=y_40,
-            marker_color=LIME, opacity=0.5,
-            hovertemplate="<b>%{x}</b><br>Всего: %{y:,.0f}<extra></extra>",
-        ))
-        f6.add_trace(go.Bar(
-            name="Устранено", x=x_lbl, y=y_resolved,
-            marker_color=DARK_GREEN, opacity=0.95,
-            hovertemplate="<b>%{x}</b><br>Устранено: %{y:,.0f}<extra></extra>",
-        ))
-        f6.update_layout(
-            height=210, margin=dict(t=10, b=30, l=42, r=8),
-            paper_bgcolor=BG, plot_bgcolor=BG,
-            font=dict(size=10, color=GREY_TXT),
-            barmode="overlay", bargap=0.3,
-            showlegend=True,
-            legend=dict(orientation="h", y=1.14, x=0, font=dict(size=10)),
-            xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
-            yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
-        )
-        st.plotly_chart(f6, use_container_width=True, config={"displayModeBar": False})
-
-        # ── График 3: Счётчик повторов + Скорость устранения (две линии) ──
-        chart_title("Средний счётчик повторов и скорость устранения")
-        s_7  = get_series(df, "metric_smr_7",  date_from, date_to)
-        s_35 = get_series(df, "metric_smr_35", date_from, date_to)
-        all_d = sorted(set(s_7["date_end"].tolist()) | set(s_35["date_end"].tolist()))
-        x_lbl = [d.strftime("%d.%m") for d in all_d]
-        map_7  = dict(zip(s_7["date_end"],  s_7["value_s"]))
-        map_35 = dict(zip(s_35["date_end"], s_35["value_s"]))
-        y_7  = [map_7.get(d)  for d in all_d]
-        y_35 = [map_35.get(d) for d in all_d]
-        f7 = go.Figure()
-        f7.add_trace(go.Scatter(
-            name="Средний счётчик повторов", x=x_lbl, y=y_7,
-            mode="lines+markers",
-            line=dict(color=GREEN, width=2.5),
-            marker=dict(size=6, color=GREEN),
-            hovertemplate="<b>%{x}</b><br>Повторы: %{y:.2f}<extra></extra>",
-        ))
-        f7.add_trace(go.Scatter(
-            name="Скорость устранения", x=x_lbl, y=y_35,
-            mode="lines+markers",
-            line=dict(color=ORANGE, width=2.5),
-            marker=dict(size=6, color=ORANGE), yaxis="y2",
-            hovertemplate="<b>%{x}</b><br>Скорость: %{y:.2f}<extra></extra>",
-        ))
-        f7.update_layout(
-            height=210, margin=dict(t=10, b=30, l=42, r=42),
-            paper_bgcolor=BG, plot_bgcolor=BG,
-            font=dict(size=10, color=GREY_TXT),
-            showlegend=True,
-            legend=dict(orientation="h", y=1.14, x=0, font=dict(size=10)),
-            xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
-            yaxis=dict(gridcolor=GRID, tickfont=dict(size=10),
-                       title=dict(text="Повторы", font=dict(size=10, color=GREY_TXT))),
-            yaxis2=dict(overlaying="y", side="right", gridcolor="rgba(0,0,0,0)",
-                        tickfont=dict(size=10),
-                        title=dict(text="Скорость", font=dict(size=10, color=GREY_TXT))),
-        )
-        st.plotly_chart(f7, use_container_width=True, config={"displayModeBar": False})
-
     with f_col:
         chart_title("Воронка метрик БА по БМО")
-        # пока статичные доли по типам (нет в данных детализации)
         v_share = v_46 if v_46 is not None else 73
         stages = ["Всего", "Выявлено", "Передано", "Устранено"]
-        # пропорциональные значения от текущей доли
         base = int(v_40 if v_40 else 1600)
         totals = [base, int(base * 0.75), int(base * 0.6), int(base * 0.53)]
         parts = {
@@ -836,4 +791,48 @@ else:
                f'style="font-family:sans-serif;">{"".join(out)}</svg>')
         st.markdown(svg, unsafe_allow_html=True)
 
-    st.caption(f"* Данные: metrics.xlsx · последняя дата {max_d.strftime('%d.%m.%Y')}")
+    # ── кнопка скачивания ──────────────────────────────────────────────
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    dl_col, _ = st.columns([1.5, 8.5])
+    with dl_col:
+        render_export_button(
+            df,
+            ["metric_smr_46","metric_smr_45","metric_smr_40","metric_smr_41",
+             "metric_smr_34","metric_smr_10","metric_smr_7","metric_smr_9",
+             "metric_smr_8","metric_smr_35"],
+            eff_from_b, eff_to_b,
+            key="dl_bmo", file_label="БМО"
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ПОДВАЛ: незаметная кнопка обновления данных в правом нижнем углу
+# ══════════════════════════════════════════════════════════════════════════
+st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
+foot_l, foot_r = st.columns([8, 2])
+with foot_r:
+    st.markdown(
+        """<style>
+        div[data-testid="column"]:has(div.refresh-marker) button {
+            background: transparent !important;
+            border: none !important;
+            color: #999 !important;
+            font-size: 11px !important;
+            font-weight: 400 !important;
+            padding: 4px 8px !important;
+        }
+        div[data-testid="column"]:has(div.refresh-marker) button:hover {
+            color: #2A7E2E !important;
+            background: transparent !important;
+        }
+        </style><div class="refresh-marker"></div>""",
+        unsafe_allow_html=True,
+    )
+    if st.button("обновить данные", key="footer_refresh"):
+        try:
+            if os.path.exists(XLSX_PATH):
+                _convert_xlsx_to_json()
+            st.cache_data.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Ошибка обновления: {e}")
