@@ -262,25 +262,21 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
     z-index: 1000;
 }}
 .info-badge:hover::after {{ opacity: 1; }}
-/* Любой container/wrapper, содержащий Plotly-график — белый фон, рамка, скругление */
-div[data-testid="stVerticalBlock"]:has(> div [data-testid="stPlotlyChart"]) {{
-    background: transparent;
-}}
-div[data-testid="stVerticalBlockBorderWrapper"]:has([data-testid="stPlotlyChart"]) {{
-    background: #ffffff !important;
+/* Контейнер с border=True — белый фон. Покрываем разные версии Streamlit */
+div[data-testid="stVerticalBlockBorderWrapper"] {{
+    background-color: #ffffff !important;
     border-radius: 12px !important;
 }}
-/* Альтернатива: новые версии Streamlit используют другой класс. 
-   Сделаем .chart-box обертку через div, и зальём именно её родителя. */
-.element-container:has(.stPlotlyChart),
-.element-container:has(div[data-testid="stPlotlyChart"]) {{
-    background: transparent !important;
+/* Все вложенные блоки внутри border-wrapper тоже прозрачные, чтобы не подмешивался зелёный */
+div[data-testid="stVerticalBlockBorderWrapper"] > div,
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"],
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stElementContainer"] {{
+    background-color: transparent !important;
 }}
-/* Сам Plotly-график — белый фон */
+/* Сам Plotly график тоже белый, на всякий случай */
 div[data-testid="stPlotlyChart"] {{
-    background: #ffffff !important;
+    background-color: #ffffff !important;
     border-radius: 8px !important;
-    padding: 4px !important;
 }}
 </style>
 """, unsafe_allow_html=True)
