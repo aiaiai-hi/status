@@ -33,30 +33,76 @@ CARD_STYLES = {
 # ══════════════════════════════════════════════════════════════════════════
 import json
 import os
-import subprocess
+
+XLSX_PATH  = "metrics.xlsx"
+JSON_PATH  = "metrics.json"
+XLSX_SHEET = "Основное"
+
+
+def _convert_xlsx_to_json():
+    """Читает metrics.xlsx (лист «Основное») и сохраняет metrics.json. Возвращает dict."""
+    if not os.path.exists(XLSX_PATH):
+        raise FileNotFoundError(
+            f"Нет файла {XLSX_PATH} в папке приложения. "
+            "Положите его рядом с app.py."
+        )
+
+    df_xl = pd.read_excel(XLSX_PATH, sheet_name=XLSX_SHEET)
+
+    needed = ["date_end", "value_s", "metric_id", "metric_name"]
+    missing = [c for c in needed if c not in df_xl.columns]
+    if missing:
+        raise ValueError(
+            f"В листе «{XLSX_SHEET}» нет колонок: {missing}. "
+            f"Есть только: {list(df_xl.columns)[:15]}"
+        )
+
+    df_xl = df_xl[needed].copy()
+    df_xl = df_xl.dropna(subset=["date_end", "value_s", "metric_id"])
+    df_xl["value_s"]    = pd.to_numeric(df_xl["value_s"], errors="coerce")
+    df_xl = df_xl.dropna(subset=["value_s"])
+    df_xl["date_end"]   = pd.to_datetime(df_xl["date_end"]).dt.strftime("%Y-%m-%d")
+    df_xl["metric_id"]  = df_xl["metric_id"].astype(str)
+    df_xl["metric_name"]= df_xl["metric_name"].fillna("").astype(str)
+
+    data = {
+        "version": 1,
+        "source":  XLSX_PATH,
+        "sheet":   XLSX_SHEET,
+        "rows":    len(df_xl),
+        "records": df_xl.to_dict(orient="records"),
+    }
+    with open(JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return data
+
 
 @st.cache_data
 def load_data():
-    """Читает данные из metrics.json. Если его нет — пытается сконвертировать из xlsx."""
-    if not os.path.exists("metrics.json"):
-        if os.path.exists("metrics.xlsx") and os.path.exists("convert_data.py"):
-            try:
-                subprocess.run(["python", "convert_data.py"], check=True, timeout=30)
-            except Exception as e:
-                raise FileNotFoundError(
-                    f"Нет metrics.json и не получилось сконвертировать из xlsx: {e}"
-                )
-        else:
-            raise FileNotFoundError(
-                "Нет файла metrics.json. Запустите: python convert_data.py"
-            )
+    """
+    Стратегия:
+    1. Если metrics.json валидный и не пустой — берём из него.
+    2. Иначе — читаем metrics.xlsx, конвертируем в JSON, перезаписываем metrics.json.
+    """
+    data = None
 
-    with open("metrics.json", "r", encoding="utf-8") as f:
-        data = json.load(f)
+    if os.path.exists(JSON_PATH):
+        try:
+            with open(JSON_PATH, "r", encoding="utf-8") as f:
+                txt = f.read().strip()
+            if txt:
+                data = json.loads(txt)
+                if not data.get("records"):
+                    data = None
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            data = None
+
+    if data is None:
+        data = _convert_xlsx_to_json()
 
     df = pd.DataFrame(data["records"])
     df["date_end"] = pd.to_datetime(df["date_end"])
-    df["value_s"] = pd.to_numeric(df["value_s"], errors="coerce")
+    df["value_s"]  = pd.to_numeric(df["value_s"], errors="coerce")
     df = df.dropna(subset=["date_end", "value_s", "metric_id"])
     return df
 
@@ -150,7 +196,7 @@ try:
     available_dates = sorted(df["date_end"].dt.date.unique())
     data_ok = True
 except Exception as e:
-    st.error(f"Не удалось загрузить metrics.xlsx (лист «Выгрузка»): {e}")
+    st.error(f"Не удалось загрузить данные: {e}")
     data_ok = False
     df = None
     available_dates = []
@@ -177,15 +223,14 @@ with n2:
 with n3:
     if st.button("🔄 Обновить данные", key="nav_refresh",
                  type="secondary", use_container_width=True):
-        # Перегенерируем JSON из xlsx (если xlsx есть) и сбрасываем кэш
         try:
-            if os.path.exists("metrics.xlsx") and os.path.exists("convert_data.py"):
-                subprocess.run(["python", "convert_data.py"], check=True, timeout=30)
-                st.success("Данные обновлены из metrics.xlsx")
-            elif os.path.exists("metrics.json"):
-                st.info("metrics.xlsx не найден — перечитан существующий metrics.json")
+            if os.path.exists(XLSX_PATH):
+                _convert_xlsx_to_json()
+                st.success(f"Данные обновлены из {XLSX_PATH}")
+            elif os.path.exists(JSON_PATH):
+                st.info(f"{XLSX_PATH} не найден — перечитан существующий {JSON_PATH}")
             else:
-                st.error("Нет ни metrics.xlsx, ни metrics.json в папке приложения")
+                st.error(f"Нет ни {XLSX_PATH}, ни {JSON_PATH} в папке приложения")
         except Exception as e:
             st.error(f"Ошибка обновления: {e}")
         st.cache_data.clear()
