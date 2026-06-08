@@ -318,7 +318,7 @@ try:
     max_date  = pd.Timestamp(all_dates[-1])
     min_date  = pd.Timestamp(all_dates[0])
 except Exception as e:
-    st.error(f"Не удалось загрузить Книга2.xlsx: {e}")
+    st.error(f"Не удалось загрузить metrics.xlsx: {e}")
     data_ok = False
 
 
@@ -327,7 +327,7 @@ except Exception as e:
 # ══════════════════════════════════════════════════════════════════════════
 if p == "summary":
     if not data_ok:
-        st.info("Разместите файл Книга2.xlsx в корневой папке приложения.")
+        st.info("Разместите файл metrics.xlsx в корневой папке приложения.")
         st.stop()
 
     # ── выбор периода ─────────────────────────────────────────────────────
@@ -478,7 +478,7 @@ if p == "summary":
         with mc4:
             render_metric(df_long, "metric_smr_37", date_from, date_to, fmt="{:.1f}", style="purple")
 
-    st.caption(f"Данные: Книга2.xlsx · последнее обновление {max_date.strftime('%d.%m.%Y')}")
+    st.caption(f"Данные: metrics.xlsx · последнее обновление {max_date.strftime('%d.%m.%Y')}")
 
 
 # ══════════════════════════════════════════════════════════════════════════
