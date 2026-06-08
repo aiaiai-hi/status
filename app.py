@@ -957,7 +957,7 @@ else:
                 offsetgroup="g2", yaxis="y2",
                 hovertemplate="<b>%{x}</b><br>"+n7+": %{y:.2f}<extra></extra>"))
             fQ.update_layout(
-                height=210, margin=dict(t=10, b=30, l=42, r=46),
+                height=240, margin=dict(t=10, b=30, l=42, r=46),
                 paper_bgcolor=BG, plot_bgcolor=BG,
                 font=dict(size=10, color=GREY_TXT),
                 barmode="group", bargap=0.25, bargroupgap=0.05,
