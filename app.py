@@ -205,6 +205,22 @@ button[data-testid="stBaseButton-primary"]:hover {{
 div[data-baseweb="input"] > div {{
     border-radius: 6px !important; border-color: #B6D87C !important;
 }}
+/* Высота для download и обычных кнопок — одинаковая, чтобы Скачать и Обновить выровнялись */
+.stDownloadButton button, .stButton button {{
+    height: 42px !important;
+}}
+/* Кнопка "Обновить данные" — серая, через маркерный класс */
+div[data-testid="column"]:has(div.refresh-marker) button {{
+    background-color: #fff !important;
+    color: #777 !important;
+    border: 1px solid #C8C8C4 !important;
+    font-weight: 500 !important;
+}}
+div[data-testid="column"]:has(div.refresh-marker) button:hover {{
+    color: {GREEN} !important;
+    border-color: {GREEN} !important;
+    background-color: #F0F8E8 !important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -401,11 +417,16 @@ def render_weeks_buttons(df_long, date_from, date_to, key_prefix):
     """Рендерит ряд кнопок дат + 'Все'. Возвращает (eff_from, eff_to)."""
     weeks_in_period = get_weeks_in_period(df_long, date_from, date_to)
     state_key = f"selected_week_{key_prefix}"
-    if state_key not in st.session_state:
-        st.session_state[state_key] = "all"
-
     if not weeks_in_period:
         return date_from, date_to
+    # По умолчанию выбираем первую неделю в периоде
+    first_wkey = weeks_in_period[0].strftime("%Y-%m-%d")
+    if state_key not in st.session_state:
+        st.session_state[state_key] = first_wkey
+    # Если выбранная неделя больше не входит в период — переключаемся на первую
+    avail_keys = {d.strftime("%Y-%m-%d") for d in weeks_in_period}
+    if st.session_state[state_key] not in avail_keys:
+        st.session_state[state_key] = first_wkey
 
     st.markdown(
         f"""<p style='font-size:11px;color:{GREY_TXT};margin:0 0 4px;font-weight:600;'>
@@ -420,7 +441,7 @@ def render_weeks_buttons(df_long, date_from, date_to, key_prefix):
         <div class="weeks-row-{key_prefix}"></div>""",
         unsafe_allow_html=True
     )
-    items = [("all", "Все")] + [(d.strftime("%Y-%m-%d"), d.strftime("%d.%m")) for d in weeks_in_period[:9]]
+    items = [(d.strftime("%Y-%m-%d"), d.strftime("%d.%m")) for d in weeks_in_period[:10]]
     cols_w = st.columns(len(items))
     for i, (val, lbl) in enumerate(items):
         with cols_w[i]:
@@ -430,13 +451,11 @@ def render_weeks_buttons(df_long, date_from, date_to, key_prefix):
                 st.session_state[state_key] = val
                 st.rerun()
 
-    if st.session_state[state_key] != "all":
-        try:
-            wd = pd.Timestamp(st.session_state[state_key]).date()
-            return wd, wd
-        except Exception:
-            return date_from, date_to
-    return date_from, date_to
+    try:
+        wd = pd.Timestamp(st.session_state[state_key]).date()
+        return wd, wd
+    except Exception:
+        return date_from, date_to
 
 
 def render_export_button(df_long, metric_ids, date_from, date_to, key, file_label):
@@ -455,22 +474,7 @@ def render_export_button(df_long, metric_ids, date_from, date_to, key, file_labe
 
 def render_refresh_button(key):
     """Серая кнопка «Обновить данные» — обновляет JSON из xlsx и сбрасывает кэш."""
-    st.markdown(
-        f"""<style>
-        div[data-testid="column"]:has(div.refresh-{key}-marker) button[kind] {{
-            background: #fff !important;
-            border: 1px solid #C8C8C4 !important;
-            color: #777 !important;
-            font-weight: 500 !important;
-        }}
-        div[data-testid="column"]:has(div.refresh-{key}-marker) button[kind]:hover {{
-            color: {GREEN} !important;
-            border-color: {GREEN} !important;
-            background: #F0F8E8 !important;
-        }}
-        </style><div class="refresh-{key}-marker"></div>""",
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="refresh-marker" style="display:none;"></div>', unsafe_allow_html=True)
     if st.button("Обновить данные", key=key, use_container_width=True):
         try:
             if os.path.exists(XLSX_PATH):
@@ -534,11 +538,11 @@ if p == "summary":
             metric_card("Количество видов отклонений (за период)",
                         fmt_num(v_1),
                         delta=delta_1_str, delta_dir=dir_1, style="dark-green",
-                        right_text=right_1, delta_label="к пред. неделе")
+                        right_text=right_1)
             metric_card("Количество сотрудников с отклонениями (за период)",
                         fmt_num(v_3),
                         delta=fmt_delta(p_3), delta_dir=d_3 or "up", style="green",
-                        right_text=right_3, delta_label="к пред. периоду")
+                        right_text=right_3)
         with g:
             chart_title("Качество работы с отклонениями (динамика за 3 месяца)")
             df3m_from = (pd.Timestamp(eff_to) - pd.DateOffset(months=3)).date()
@@ -569,12 +573,7 @@ if p == "summary":
                 xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
                 yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
             )
-            st.plotly_chart(f1, use_container_width=True, config={
-                "displayModeBar": True,
-                "displaylogo": False,
-                "modeBarButtonsToRemove": ["lasso2d","select2d","toggleSpikelines",
-                                            "hoverClosestCartesian","hoverCompareCartesian"],
-            })
+            st.plotly_chart(f1, use_container_width=True, config={"displayModeBar": False})
 
     with q2:
         # Q2: график "Задачи" слева, плашки справа (Кол-во ВСП и Кол-во задач/Хроник)
@@ -609,17 +608,12 @@ if p == "summary":
                 xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
                 yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
             )
-            st.plotly_chart(f3, use_container_width=True, config={
-                "displayModeBar": True,
-                "displaylogo": False,
-                "modeBarButtonsToRemove": ["lasso2d","select2d","toggleSpikelines",
-                                            "hoverClosestCartesian","hoverCompareCartesian"],
-            })
+            st.plotly_chart(f3, use_container_width=True, config={"displayModeBar": False})
         with m:
             metric_card("Кол-во ВСП с отклонениями (за период)",
                         fmt_num(v_2),
                         delta=fmt_delta(p_2), delta_dir=d_2 or "up", style="orange",
-                        right_text=right_2, delta_label="к пред. периоду")
+                        right_text=right_2)
             metric_pair("Кол-во родит.задач / экскалированных (за период)",
                         fmt_num(v_38), fmt_delta(p_38),
                         fmt_num(v_39), fmt_delta(p_39),
@@ -693,14 +687,12 @@ else:
     cards = [
         ("Доля по Банку",              fmt_num(v_46, "%", 1),                    fmt_delta(p_46), d_46 or "up", GREEN),
         ("Целевое значение",           fmt_num(v_45, "%", 1) if v_45 is not None else "—", "", "up", "#5F5E5A"),
-        ("Кол-во родит.задач / эскал.", qty_pair,                                fmt_delta(p_40), d_40 or "up", YELLOW),
-        ("Доля устранённых",           fmt_num(v_34, "%", 1),                    fmt_delta(p_34), d_34 or "up", LIME),
+        ("Кол-во родит.задач / эскалированных", qty_pair,                       fmt_delta(p_40), d_40 or "up", YELLOW),
         ("Пораженность",               fmt_num(v_10, "%", 1),                    fmt_delta(p_10), d_10 or "up", GREEN),
         ("Средний счётчик повторов",   fmt_num(v_7, "", 2),                      fmt_delta(p_7),  d_7 or "up",  ORANGE),
         ("Кол-во объектов: Сотрудников / ВСП", chel_vsp,                          "",              "up",         DARK_GREEN),
-        ("Скорость устранения",        fmt_num(v_35, " нед.", 1),                fmt_delta(p_35), d_35 or "up", BLACK),
     ]
-    cols = st.columns(8)
+    cols = st.columns(6)
     for c_, (lbl, v, d, dr, ac) in zip(cols, cards):
         with c_:
             st.markdown(bmo_card(lbl, v, d, dr, ac), unsafe_allow_html=True)
@@ -711,9 +703,10 @@ else:
 
     with g_col:
         # ── График 1: Доля по Банку / Целевое значение ──
-        chart_title("Доля по Банку / Целевое значение (динамика за выбранный период)")
-        s_46 = get_series(df, "metric_smr_46", eff_from_b, eff_to_b)
-        s_45 = get_series(df, "metric_smr_45", eff_from_b, eff_to_b)
+        chart_title("Доля по Банку / Целевое значение (динамика за 3 месяца)")
+        df3m_from_b = (pd.Timestamp(eff_to_b) - pd.DateOffset(months=3)).date()
+        s_46 = get_series(df, "metric_smr_46", df3m_from_b, eff_to_b)
+        s_45 = get_series(df, "metric_smr_45", df3m_from_b, eff_to_b)
         all_d = sorted(set(s_46["date_end"].tolist()) | set(s_45["date_end"].tolist()))
         x_lbl = [d.strftime("%d.%m") for d in all_d]
         map_46 = dict(zip(s_46["date_end"], s_46["value_s"]))
