@@ -276,19 +276,40 @@ components.html("""
 <script>
 const parentDoc = window.parent.document;
 function paintCards() {
-  // Красим только Plotly-графики и их непосредственного border-родителя
   parentDoc.querySelectorAll('[data-testid="stPlotlyChart"]').forEach(plot => {
     plot.style.backgroundColor = '#ffffff';
     plot.style.borderRadius = '8px';
-    // Идём вверх по дереву, ищем ближайший stVerticalBlockBorderWrapper
+
+    // Идём вверх до border-wrapper и собираем все промежуточные элементы
+    const chain = [];
     let p = plot.parentElement;
-    for (let i = 0; i < 10 && p; i++) {
+    let wrapper = null;
+    for (let i = 0; i < 12 && p; i++) {
+      chain.push(p);
       if (p.getAttribute && p.getAttribute('data-testid') === 'stVerticalBlockBorderWrapper') {
-        p.style.backgroundColor = '#ffffff';
-        p.style.borderRadius = '12px';
+        wrapper = p;
         break;
       }
       p = p.parentElement;
+    }
+
+    if (wrapper) {
+      wrapper.style.backgroundColor = '#ffffff';
+      wrapper.style.borderRadius = '12px';
+      wrapper.style.overflow = 'hidden';
+      // Все промежуточные div'ы внутри обёртки тоже красим в белый
+      chain.forEach(el => {
+        if (el !== wrapper) {
+          el.style.backgroundColor = '#ffffff';
+        }
+      });
+      // Также красим все потомки wrapper'а в белый (на всякий случай)
+      wrapper.querySelectorAll('div').forEach(d => {
+        // Не трогаем сам Plotly с его скруглением
+        if (d.getAttribute('data-testid') !== 'stPlotlyChart') {
+          d.style.backgroundColor = '#ffffff';
+        }
+      });
     }
   });
 }
