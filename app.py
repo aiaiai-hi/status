@@ -725,7 +725,7 @@ if p == "summary":
     with q3:
         m, g = st.columns([1, 2.2], gap="small")
         with m:
-            metric_card("Количество видов отклонений (неделя)",
+            metric_card("Количество активных видов отклонений (неделя)",
                         fmt_num(v_1),
                         delta=delta_1_str, delta_dir=dir_1, style="dark-green",
                         right_text=right_1)
