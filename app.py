@@ -347,11 +347,19 @@ def metric_pair(label, v1, d1, v2, d2, style="yellow", d1_dir="up", d2_dir="up")
 def chart_title(t, tooltip=None):
     tip_html = ""
     if tooltip:
-        tip_html = (f' <span title="{tooltip}" style="font-size:11px;color:{GREY_TXT};'
-                    f'border:1px solid #C8C8C4;border-radius:50%;padding:1px 6px;'
-                    f'cursor:help;font-weight:400;margin-left:6px;">ⓘ</span>')
-    st.markdown(f'<p style="font-size:13px;font-weight:600;color:{BLACK};margin:0 0 4px;">{t}{tip_html}</p>',
-                unsafe_allow_html=True)
+        tip_html = f'<span class="info-badge" title="{tooltip}">i</span>'
+    st.markdown(
+        f'<div style="font-size:13px;font-weight:600;color:{BLACK};margin:0 0 6px;'
+        f'display:flex;align-items:center;">{t}{tip_html}</div>',
+        unsafe_allow_html=True
+    )
+
+
+def open_card():
+    st.markdown('<div class="chart-card-wrap">', unsafe_allow_html=True)
+
+def close_card():
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ── доп. хелперы для новых требований ─────────────────────────────────────
 def get_avg_last_n_weeks(df_long, metric_id, ref_date, n=3):
@@ -563,181 +571,190 @@ if p == "summary":
     v_38, p_38, d_38 = get_delta(df, "metric_smr_38", eff_from, eff_to)
     v_39, p_39, d_39 = get_delta(df, "metric_smr_39", eff_from, eff_to)
 
-    # ════ 4 строки: график + метрики справа ════
-    def _chart_card(title, tooltip, build_chart_fn):
-        chart_title(title, tooltip=tooltip)
-        build_chart_fn()
+    # вспомогательное: 3 месяца от eff_to (последняя выбранная неделя)
+    df3m_from = (pd.Timestamp(eff_to) - pd.DateOffset(months=3)).date()
 
-    # цвета по строкам
-    C_DEV_PRIMARY   = DARK_GREEN
-    C_DEV_SECOND    = YELLOW
-    C_PEOPLE_PRIM   = GREEN
-    C_PEOPLE_SEC    = ORANGE
-    C_QUALITY_PRIM  = LIME
-    C_QUALITY_SEC   = YELLOW
-    C_TASKS_PRIM    = DARK_GREEN
-    C_TASKS_SEC     = LIME
+    # ════ Q1 + Q2: Q1 = метрики 1,11 + график "Качество работы"; Q2 = график "Задачи" + метрики 38, 39 ════
+    q1, q2 = st.columns([1, 1], gap="large")
 
-    # ──────────────────── Строка 1: ОТКЛОНЕНИЯ ────────────────────
-    r1_g, r1_m = st.columns([1.4, 1], gap="large")
-    with r1_g:
-        chart_title("Отклонения", tooltip="Динамика за 3 месяца")
-        df3m_from = (pd.Timestamp(eff_to) - pd.DateOffset(months=3)).date()
-        s_1 = get_series(df, "metric_smr_1", df3m_from, eff_to)
-        x_lbl = s_1["date_end"].dt.strftime("%d.%m").tolist()
-        f_dev = go.Figure(go.Bar(
-            name=get_metric_name(df, "metric_smr_1"),
-            x=x_lbl, y=s_1["value_s"].tolist(),
-            marker_color=C_DEV_PRIMARY, opacity=0.9,
-            hovertemplate="<b>%{x}</b><br>Отклонения: %{y:,.0f}<extra></extra>"))
-        f_dev.update_layout(
-            height=200, margin=dict(t=10, b=30, l=42, r=8),
-            paper_bgcolor=BG, plot_bgcolor=BG,
-            font=dict(size=10, color=GREY_TXT),
-            bargap=0.3, showlegend=False,
-            xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
-            yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
-        )
-        st.plotly_chart(f_dev, use_container_width=True, config={"displayModeBar": False})
-    with r1_m:
-        metric_card("Количество видов отклонений (неделя)",
-                    fmt_num(v_1),
-                    delta=delta_1_str, delta_dir=dir_1, style="dark-green",
-                    right_text=right_1)
-        metric_card(get_metric_name(df, "metric_smr_11") + " (неделя)",
-                    fmt_num(v_11),
-                    delta=fmt_delta(p_11), delta_dir=d_11 or "up", style="yellow")
+    with q1:
+        m, g = st.columns([1, 2.2], gap="small")
+        with m:
+            metric_card("Количество видов отклонений (неделя)",
+                        fmt_num(v_1),
+                        delta=delta_1_str, delta_dir=dir_1, style="dark-green",
+                        right_text=right_1)
+            metric_card(get_metric_name(df, "metric_smr_11") + " (неделя)",
+                        fmt_num(v_11),
+                        delta=fmt_delta(p_11), delta_dir=d_11 or "up", style="yellow")
+        with g:
+            open_card()
+            chart_title("Качество работы с отклонениями", tooltip="Динамика за 3 месяца")
+            s_4 = get_series(df, "metric_smr_4", df3m_from, eff_to)
+            s_5 = get_series(df, "metric_smr_5", df3m_from, eff_to)
+            all_w = sorted(set(s_4["date_end"].tolist()) | set(s_5["date_end"].tolist()))
+            x_lbl = [d.strftime("%d.%m") for d in all_w]
+            map_4 = dict(zip(s_4["date_end"], s_4["value_s"]))
+            map_5 = dict(zip(s_5["date_end"], s_5["value_s"]))
+            y_4 = [map_4.get(d) for d in all_w]
+            y_5 = [map_5.get(d) for d in all_w]
+            n4 = get_metric_name(df, "metric_smr_4")
+            n5 = get_metric_name(df, "metric_smr_5")
+            f_q = go.Figure()
+            f_q.add_trace(go.Bar(name=n4, x=x_lbl, y=y_4,
+                marker_color=LIME, opacity=0.9,
+                hovertemplate="<b>%{x}</b><br>"+n4+": %{y:.2f}<extra></extra>"))
+            f_q.add_trace(go.Bar(name=n5, x=x_lbl, y=y_5,
+                marker_color=YELLOW, opacity=0.9,
+                hovertemplate="<b>%{x}</b><br>"+n5+": %{y:.2f}<extra></extra>"))
+            f_q.update_layout(
+                height=210, margin=dict(t=14, b=32, l=42, r=8),
+                paper_bgcolor=BG, plot_bgcolor=BG,
+                font=dict(size=10, color=GREY_TXT),
+                barmode="group", bargap=0.25, bargroupgap=0.05,
+                showlegend=True,
+                legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
+                xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
+                yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
+            )
+            st.plotly_chart(f_q, use_container_width=True, config={"displayModeBar": False})
+            close_card()
 
-    st.markdown("<hr style='margin:6px 0 10px;border:none;border-top:1px solid #E0E0DA;'>",
+    with q2:
+        g, m = st.columns([2.2, 1], gap="small")
+        with g:
+            open_card()
+            chart_title("Задачи", tooltip="Динамика за 3 месяца")
+            s_38 = get_series(df, "metric_smr_38", df3m_from, eff_to)
+            s_39 = get_series(df, "metric_smr_39", df3m_from, eff_to)
+            all_w = sorted(set(s_38["date_end"].tolist()) | set(s_39["date_end"].tolist()))
+            x_lbl = [d.strftime("%d.%m") for d in all_w]
+            map_38 = dict(zip(s_38["date_end"], s_38["value_s"]))
+            map_39 = dict(zip(s_39["date_end"], s_39["value_s"]))
+            y_38 = [map_38.get(d) for d in all_w]
+            y_39 = [map_39.get(d) for d in all_w]
+            n38 = get_metric_name(df, "metric_smr_38")
+            n39 = get_metric_name(df, "metric_smr_39")
+            f_t = go.Figure()
+            f_t.add_trace(go.Bar(name=n38, x=x_lbl, y=y_38,
+                marker_color=DARK_GREEN, opacity=0.9,
+                hovertemplate="<b>%{x}</b><br>"+n38+": %{y:,.0f}<extra></extra>"))
+            f_t.add_trace(go.Bar(name=n39, x=x_lbl, y=y_39,
+                marker_color=LIME, opacity=0.9,
+                hovertemplate="<b>%{x}</b><br>"+n39+": %{y:,.0f}<extra></extra>"))
+            f_t.update_layout(
+                height=210, margin=dict(t=14, b=32, l=42, r=8),
+                paper_bgcolor=BG, plot_bgcolor=BG,
+                font=dict(size=10, color=GREY_TXT),
+                barmode="stack", bargap=0.3,
+                showlegend=True,
+                legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
+                xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
+                yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
+            )
+            st.plotly_chart(f_t, use_container_width=True, config={"displayModeBar": False})
+            close_card()
+        with m:
+            metric_card("Кол-во родит.задач (неделя)",
+                        fmt_num(v_38),
+                        delta=fmt_delta(p_38), delta_dir=d_38 or "up", style="dark-green")
+            metric_card("Кол-во эскалированных (неделя)",
+                        fmt_num(v_39),
+                        delta=fmt_delta(p_39), delta_dir=d_39 or "up", style="lime")
+
+    st.markdown("<hr style='margin:8px 0 12px;border:none;border-top:1px solid #D8E8D0;'>",
                 unsafe_allow_html=True)
 
-    # ──────────────────── Строка 2: КОЛ-ВО СОТРУДНИКОВ / ВСП ──────
-    r2_g, r2_m = st.columns([1.4, 1], gap="large")
-    with r2_g:
-        chart_title("Кол-во сотрудников / ВСП", tooltip="Динамика за 3 месяца")
-        s_3 = get_series(df, "metric_smr_3", df3m_from, eff_to)
-        s_2 = get_series(df, "metric_smr_2", df3m_from, eff_to)
-        all_w = sorted(set(s_3["date_end"].tolist()) | set(s_2["date_end"].tolist()))
-        x_lbl = [d.strftime("%d.%m") for d in all_w]
-        map_3 = dict(zip(s_3["date_end"], s_3["value_s"]))
-        map_2 = dict(zip(s_2["date_end"], s_2["value_s"]))
-        y_3 = [map_3.get(d) for d in all_w]
-        y_2 = [map_2.get(d) for d in all_w]
-        n3 = get_metric_name(df, "metric_smr_3")
-        n2 = get_metric_name(df, "metric_smr_2")
-        f_pv = go.Figure()
-        f_pv.add_trace(go.Bar(name=n3, x=x_lbl, y=y_3,
-            marker_color=C_PEOPLE_PRIM, opacity=0.9,
-            hovertemplate="<b>%{x}</b><br>"+n3+": %{y:,.0f}<extra></extra>"))
-        f_pv.add_trace(go.Bar(name=n2, x=x_lbl, y=y_2,
-            marker_color=C_PEOPLE_SEC, opacity=0.9,
-            hovertemplate="<b>%{x}</b><br>"+n2+": %{y:,.0f}<extra></extra>"))
-        f_pv.update_layout(
-            height=200, margin=dict(t=10, b=30, l=42, r=8),
-            paper_bgcolor=BG, plot_bgcolor=BG,
-            font=dict(size=10, color=GREY_TXT),
-            barmode="group", bargap=0.25, bargroupgap=0.05,
-            showlegend=True,
-            legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
-            xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
-            yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
-        )
-        st.plotly_chart(f_pv, use_container_width=True, config={"displayModeBar": False})
-    with r2_m:
-        metric_card("Количество сотрудников с отклонениями (неделя)",
-                    fmt_num(v_3),
-                    delta=fmt_delta(p_3), delta_dir=d_3 or "up", style="green",
-                    right_text=right_3)
-        metric_card("Кол-во ВСП с отклонениями (неделя)",
-                    fmt_num(v_2),
-                    delta=fmt_delta(p_2), delta_dir=d_2 or "up", style="orange",
-                    right_text=right_2)
+    # ════ Q3 + Q4: Q3 = метрики 1,11 + график "Отклонения"; Q4 = график "Кол-во сотрудников/ВСП" + метрики 3, 2 ════
+    q3, q4 = st.columns([1, 1], gap="large")
 
-    st.markdown("<hr style='margin:6px 0 10px;border:none;border-top:1px solid #E0E0DA;'>",
-                unsafe_allow_html=True)
+    with q3:
+        m, g = st.columns([1, 2.2], gap="small")
+        with m:
+            metric_card("Количество видов отклонений (неделя)",
+                        fmt_num(v_1),
+                        delta=delta_1_str, delta_dir=dir_1, style="dark-green",
+                        right_text=right_1)
+            metric_card(get_metric_name(df, "metric_smr_11") + " (неделя)",
+                        fmt_num(v_11),
+                        delta=fmt_delta(p_11), delta_dir=d_11 or "up", style="yellow")
+        with g:
+            open_card()
+            chart_title("Отклонения", tooltip="Динамика за 3 месяца")
+            s_1  = get_series(df, "metric_smr_1",  df3m_from, eff_to)
+            s_11 = get_series(df, "metric_smr_11", df3m_from, eff_to)
+            all_w = sorted(set(s_1["date_end"].tolist()) | set(s_11["date_end"].tolist()))
+            x_lbl = [d.strftime("%d.%m") for d in all_w]
+            map_1  = dict(zip(s_1["date_end"],  s_1["value_s"]))
+            map_11 = dict(zip(s_11["date_end"], s_11["value_s"]))
+            y_1  = [map_1.get(d)  for d in all_w]
+            y_11 = [map_11.get(d) for d in all_w]
+            n1  = get_metric_name(df, "metric_smr_1")
+            n11 = get_metric_name(df, "metric_smr_11")
+            f_dev = go.Figure()
+            f_dev.add_trace(go.Bar(name=n11, x=x_lbl, y=y_11,
+                marker_color=YELLOW, opacity=0.85,
+                hovertemplate="<b>%{x}</b><br>"+n11+": %{y:,.0f}<extra></extra>"))
+            f_dev.add_trace(go.Bar(name=n1, x=x_lbl, y=y_1,
+                marker_color=DARK_GREEN, opacity=0.95,
+                hovertemplate="<b>%{x}</b><br>"+n1+": %{y:,.0f}<extra></extra>"))
+            f_dev.update_layout(
+                height=210, margin=dict(t=14, b=32, l=42, r=8),
+                paper_bgcolor=BG, plot_bgcolor=BG,
+                font=dict(size=10, color=GREY_TXT),
+                barmode="group", bargap=0.25, bargroupgap=0.05,
+                showlegend=True,
+                legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
+                xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
+                yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
+            )
+            st.plotly_chart(f_dev, use_container_width=True, config={"displayModeBar": False})
+            close_card()
 
-    # ──────────────────── Строка 3: КАЧЕСТВО РАБОТЫ ───────────────
-    r3_g, r3_m = st.columns([1.4, 1], gap="large")
-    with r3_g:
-        chart_title("Качество работы с отклонениями", tooltip="Динамика за 3 месяца")
-        s_4 = get_series(df, "metric_smr_4", df3m_from, eff_to)
-        s_5 = get_series(df, "metric_smr_5", df3m_from, eff_to)
-        all_w = sorted(set(s_4["date_end"].tolist()) | set(s_5["date_end"].tolist()))
-        x_lbl = [d.strftime("%d.%m") for d in all_w]
-        map_4 = dict(zip(s_4["date_end"], s_4["value_s"]))
-        map_5 = dict(zip(s_5["date_end"], s_5["value_s"]))
-        y_4 = [map_4.get(d) for d in all_w]
-        y_5 = [map_5.get(d) for d in all_w]
-        n4 = get_metric_name(df, "metric_smr_4")
-        n5 = get_metric_name(df, "metric_smr_5")
-        f_q = go.Figure()
-        f_q.add_trace(go.Bar(name=n4, x=x_lbl, y=y_4,
-            marker_color=C_QUALITY_PRIM, opacity=0.9,
-            hovertemplate="<b>%{x}</b><br>"+n4+": %{y:.2f}<extra></extra>"))
-        f_q.add_trace(go.Bar(name=n5, x=x_lbl, y=y_5,
-            marker_color=C_QUALITY_SEC, opacity=0.9,
-            hovertemplate="<b>%{x}</b><br>"+n5+": %{y:.2f}<extra></extra>"))
-        f_q.update_layout(
-            height=200, margin=dict(t=10, b=30, l=42, r=8),
-            paper_bgcolor=BG, plot_bgcolor=BG,
-            font=dict(size=10, color=GREY_TXT),
-            barmode="group", bargap=0.25, bargroupgap=0.05,
-            showlegend=True,
-            legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
-            xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
-            yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
-        )
-        st.plotly_chart(f_q, use_container_width=True, config={"displayModeBar": False})
-    with r3_m:
-        metric_card(n4 + " (неделя)",
-                    fmt_num(v_4, "", 2),
-                    delta=fmt_delta(p_4), delta_dir=d_4 or "up", style="lime")
-        metric_card(n5 + " (неделя)",
-                    fmt_num(v_5, "", 2),
-                    delta=fmt_delta(p_5), delta_dir=d_5 or "up", style="yellow")
-
-    st.markdown("<hr style='margin:6px 0 10px;border:none;border-top:1px solid #E0E0DA;'>",
-                unsafe_allow_html=True)
-
-    # ──────────────────── Строка 4: ЗАДАЧИ ────────────────────────
-    r4_g, r4_m = st.columns([1.4, 1], gap="large")
-    with r4_g:
-        chart_title("Задачи", tooltip="Динамика за 3 месяца")
-        s_38 = get_series(df, "metric_smr_38", df3m_from, eff_to)
-        s_39 = get_series(df, "metric_smr_39", df3m_from, eff_to)
-        all_w = sorted(set(s_38["date_end"].tolist()) | set(s_39["date_end"].tolist()))
-        x_lbl = [d.strftime("%d.%m") for d in all_w]
-        map_38 = dict(zip(s_38["date_end"], s_38["value_s"]))
-        map_39 = dict(zip(s_39["date_end"], s_39["value_s"]))
-        y_38 = [map_38.get(d) for d in all_w]
-        y_39 = [map_39.get(d) for d in all_w]
-        n38 = get_metric_name(df, "metric_smr_38")
-        n39 = get_metric_name(df, "metric_smr_39")
-        f_t = go.Figure()
-        f_t.add_trace(go.Bar(name=n38, x=x_lbl, y=y_38,
-            marker_color=C_TASKS_PRIM, opacity=0.9,
-            hovertemplate="<b>%{x}</b><br>"+n38+": %{y:,.0f}<extra></extra>"))
-        f_t.add_trace(go.Bar(name=n39, x=x_lbl, y=y_39,
-            marker_color=C_TASKS_SEC, opacity=0.9,
-            hovertemplate="<b>%{x}</b><br>"+n39+": %{y:,.0f}<extra></extra>"))
-        f_t.update_layout(
-            height=200, margin=dict(t=10, b=30, l=42, r=8),
-            paper_bgcolor=BG, plot_bgcolor=BG,
-            font=dict(size=10, color=GREY_TXT),
-            barmode="stack", bargap=0.3,
-            showlegend=True,
-            legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
-            xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
-            yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
-        )
-        st.plotly_chart(f_t, use_container_width=True, config={"displayModeBar": False})
-    with r4_m:
-        metric_card("Кол-во родит.задач (неделя)",
-                    fmt_num(v_38),
-                    delta=fmt_delta(p_38), delta_dir=d_38 or "up", style="dark-green")
-        metric_card("Кол-во эскалированных (неделя)",
-                    fmt_num(v_39),
-                    delta=fmt_delta(p_39), delta_dir=d_39 or "up", style="lime")
+    with q4:
+        g, m = st.columns([2.2, 1], gap="small")
+        with g:
+            open_card()
+            chart_title("Кол-во сотрудников / ВСП", tooltip="Динамика за 3 месяца")
+            s_3 = get_series(df, "metric_smr_3", df3m_from, eff_to)
+            s_2 = get_series(df, "metric_smr_2", df3m_from, eff_to)
+            all_w = sorted(set(s_3["date_end"].tolist()) | set(s_2["date_end"].tolist()))
+            x_lbl = [d.strftime("%d.%m") for d in all_w]
+            map_3 = dict(zip(s_3["date_end"], s_3["value_s"]))
+            map_2 = dict(zip(s_2["date_end"], s_2["value_s"]))
+            y_3 = [map_3.get(d) for d in all_w]
+            y_2 = [map_2.get(d) for d in all_w]
+            n3 = get_metric_name(df, "metric_smr_3")
+            n2 = get_metric_name(df, "metric_smr_2")
+            f_pv = go.Figure()
+            f_pv.add_trace(go.Scatter(name=n3, x=x_lbl, y=y_3, mode="lines+markers",
+                line=dict(color=GREEN, width=2.5),
+                marker=dict(size=6, color=GREEN),
+                hovertemplate="<b>%{x}</b><br>"+n3+": %{y:,.0f}<extra></extra>"))
+            f_pv.add_trace(go.Scatter(name=n2, x=x_lbl, y=y_2, mode="lines+markers",
+                line=dict(color=ORANGE, width=2.5),
+                marker=dict(size=6, color=ORANGE),
+                hovertemplate="<b>%{x}</b><br>"+n2+": %{y:,.0f}<extra></extra>"))
+            f_pv.update_layout(
+                height=210, margin=dict(t=14, b=32, l=42, r=8),
+                paper_bgcolor=BG, plot_bgcolor=BG,
+                font=dict(size=10, color=GREY_TXT),
+                showlegend=True,
+                legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
+                xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
+                yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
+            )
+            st.plotly_chart(f_pv, use_container_width=True, config={"displayModeBar": False})
+            close_card()
+        with m:
+            metric_card("Количество сотрудников с отклонениями (неделя)",
+                        fmt_num(v_3),
+                        delta=fmt_delta(p_3), delta_dir=d_3 or "up", style="green",
+                        right_text=right_3)
+            metric_card("Кол-во ВСП с отклонениями (неделя)",
+                        fmt_num(v_2),
+                        delta=fmt_delta(p_2), delta_dir=d_2 or "up", style="orange",
+                        right_text=right_2)
 
     # ── кнопки внизу страницы: Скачать слева, Обновить справа ──────────
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
@@ -823,6 +840,7 @@ else:
 
     with g_col:
         # ── График 1: Доля по Банку / Целевое значение ──
+        open_card()
         chart_title("Доля по Банку / Целевое значение", tooltip="Динамика за 3 месяца")
         df3m_from_b = (pd.Timestamp(eff_to_b) - pd.DateOffset(months=3)).date()
         s_46 = get_series(df, "metric_smr_46", df3m_from_b, eff_to_b)
@@ -873,9 +891,11 @@ else:
             yaxis=dict(gridcolor=GRID, tickfont=dict(size=10), ticksuffix="%"),
         )
         st.plotly_chart(f5, use_container_width=True, config={"displayModeBar": False})
+        close_card()
 
     with q_col:
         # ── График 2: Качество работы с отклонениями (10 и 7) ──
+        open_card()
         chart_title("Качество работы с отклонениями: пораженность и счётчик повторов", tooltip="Динамика за 3 месяца")
         df3m_from = (pd.Timestamp(eff_to_b) - pd.DateOffset(months=3)).date()
         s_10 = get_series(df, "metric_smr_10", df3m_from, eff_to_b)
@@ -889,25 +909,31 @@ else:
         n10 = get_metric_name(df, "metric_smr_10")
         n7  = get_metric_name(df, "metric_smr_7")
         fQ = go.Figure()
+        # Чтобы две метрики на разных осях шли рядом, используем offsetgroup
         fQ.add_trace(go.Bar(name=n10, x=x_lbl2, y=y_10,
-            marker_color=GREEN, opacity=0.9, yaxis="y1",
+            marker_color=GREEN, opacity=0.9,
+            offsetgroup="g1", yaxis="y1",
             hovertemplate="<b>%{x}</b><br>"+n10+": %{y:.2f}<extra></extra>"))
         fQ.add_trace(go.Bar(name=n7, x=x_lbl2, y=y_7,
-            marker_color=YELLOW, opacity=0.9, yaxis="y2",
+            marker_color=YELLOW, opacity=0.9,
+            offsetgroup="g2", yaxis="y2",
             hovertemplate="<b>%{x}</b><br>"+n7+": %{y:.2f}<extra></extra>"))
         fQ.update_layout(
-            height=240, margin=dict(t=10, b=30, l=42, r=46),
+            height=210, margin=dict(t=10, b=30, l=42, r=46),
             paper_bgcolor=BG, plot_bgcolor=BG,
             font=dict(size=10, color=GREY_TXT),
             barmode="group", bargap=0.25, bargroupgap=0.05,
             showlegend=True,
             legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
             xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
-            yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
+            yaxis=dict(gridcolor=GRID, tickfont=dict(size=10),
+                       title=dict(text="Пораженность", font=dict(size=10, color=GREY_TXT))),
             yaxis2=dict(overlaying="y", side="right",
-                        gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10)),
+                        gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10),
+                        title=dict(text="Счётчик повторов", font=dict(size=10, color=GREY_TXT))),
         )
         st.plotly_chart(fQ, use_container_width=True, config={"displayModeBar": False})
+        close_card()
 
     # ── кнопки внизу страницы: Скачать слева, Обновить справа ──────────
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
