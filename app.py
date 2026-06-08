@@ -425,10 +425,11 @@ def chart_title(t, tooltip=None):
     )
 
 
+_chart_card_counter = [0]
 def chart_card():
-    """Container с явно белым фоном и рамкой."""
-    # st.container с border + дополнительный CSS поверх (на случай прозрачности)
-    return st.container(border=True)
+    """Container с белым фоном и рамкой — через уникальный key для CSS-таргетинга."""
+    _chart_card_counter[0] += 1
+    return st.container(border=True, key=f"chartcard{_chart_card_counter[0]}")
 
 # ── доп. хелперы для новых требований ─────────────────────────────────────
 def get_avg_last_n_weeks(df_long, metric_id, ref_date, n=3):
