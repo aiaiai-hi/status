@@ -126,20 +126,16 @@ def get_period_value(df, metric_id, date_from, date_to, agg="last"):
 def get_delta(df, metric_id, date_from, date_to):
     """
     Возвращает (значение, delta_pct, delta_dir).
-    Логика: текущее значение = последняя точка метрики в выбранном периоде.
-    Предыдущее = последняя доступная точка ДО начала периода (то есть строго раньше date_from).
+    Логика: текущее = последняя точка метрики в выбранном периоде.
+    Предыдущее = точка ровно за 7 дней до date_from.
+    Если данных за эту дату нет — динамика не считается.
     """
     cur = get_period_value(df, metric_id, date_from, date_to)
     if cur is None:
         return None, None, None
-
-    # Берём последнюю точку метрики строго до date_from
-    sub = df[(df["metric_id"] == metric_id) &
-             (df["date_end"] < pd.Timestamp(date_from))].sort_values("date_end")
-    if sub.empty:
-        return cur, None, None
-    prev = float(sub["value_s"].iloc[-1])
-    if prev == 0:
+    prev_date = (pd.Timestamp(date_from) - timedelta(days=7)).date()
+    prev = get_period_value(df, metric_id, prev_date, prev_date)
+    if prev is None or prev == 0:
         return cur, None, None
     pct = (cur - prev) / prev * 100
     direction = "up" if pct >= 0 else "down"
@@ -147,18 +143,14 @@ def get_delta(df, metric_id, date_from, date_to):
 
 
 def get_delta_abs(df, metric_id, date_from, date_to):
-    """
-    Абсолютная разница: (cur, abs_delta, direction).
-    Сравнение с последней точкой до date_from.
-    """
+    """Абсолютная разница: (cur, abs_delta, direction). Сравнение с точкой ровно за 7 дней до date_from."""
     cur = get_period_value(df, metric_id, date_from, date_to)
     if cur is None:
         return None, None, None
-    sub = df[(df["metric_id"] == metric_id) &
-             (df["date_end"] < pd.Timestamp(date_from))].sort_values("date_end")
-    if sub.empty:
+    prev_date = (pd.Timestamp(date_from) - timedelta(days=7)).date()
+    prev = get_period_value(df, metric_id, prev_date, prev_date)
+    if prev is None:
         return cur, None, None
-    prev = float(sub["value_s"].iloc[-1])
     delta = cur - prev
     direction = "up" if delta >= 0 else "down"
     return cur, abs(delta), direction
@@ -378,13 +370,13 @@ def build_excel_export(df_long, metric_ids, date_from, date_to, sheet_name="Summ
         if summary_rows:
             pd.DataFrame(summary_rows).to_excel(wr, sheet_name="Саммари", index=False)
 
-        # Лист 3: сравнение с предыдущим периодом
-        prev_to   = pd.Timestamp(date_from) - timedelta(days=1)
-        prev_from = prev_to - (pd.Timestamp(date_to) - pd.Timestamp(date_from))
+        # Лист 3: сравнение — точно за 7 дней до date_from
+        prev_date_from = pd.Timestamp(date_from) - timedelta(days=7)
+        prev_date_to   = pd.Timestamp(date_to)   - timedelta(days=7)
         comp_rows = []
         for mid in metric_ids:
             cur = get_period_value(df_long, mid, date_from, date_to)
-            prev = get_period_value(df_long, mid, prev_from.date(), prev_to.date())
+            prev = get_period_value(df_long, mid, prev_date_from.date(), prev_date_to.date())
             comp_rows.append({
                 "ID метрики": mid,
                 "Метрика":   get_metric_name(df_long, mid),
@@ -396,8 +388,8 @@ def build_excel_export(df_long, metric_ids, date_from, date_to, sheet_name="Summ
         meta = pd.DataFrame([
             {"Параметр": "Текущий период с",    "Значение": pd.Timestamp(date_from).strftime("%d.%m.%Y")},
             {"Параметр": "Текущий период по",   "Значение": pd.Timestamp(date_to).strftime("%d.%m.%Y")},
-            {"Параметр": "Сравниваемый период с",  "Значение": prev_from.strftime("%d.%m.%Y")},
-            {"Параметр": "Сравниваемый период по", "Значение": prev_to.strftime("%d.%m.%Y")},
+            {"Параметр": "Сравниваемый период с",  "Значение": prev_date_from.strftime("%d.%m.%Y")},
+            {"Параметр": "Сравниваемый период по", "Значение": prev_date_to.strftime("%d.%m.%Y")},
         ])
         meta.to_excel(wr, sheet_name="Сравнение", index=False, startrow=0)
         pd.DataFrame(comp_rows).to_excel(wr, sheet_name="Сравнение", index=False, startrow=6)
@@ -406,7 +398,7 @@ def build_excel_export(df_long, metric_ids, date_from, date_to, sheet_name="Summ
 
 
 def render_weeks_buttons(df_long, date_from, date_to, key_prefix):
-    """Рендерит ряд кнопок дат + 'Весь период'. Возвращает (eff_from, eff_to)."""
+    """Рендерит ряд кнопок дат + 'Все'. Возвращает (eff_from, eff_to)."""
     weeks_in_period = get_weeks_in_period(df_long, date_from, date_to)
     state_key = f"selected_week_{key_prefix}"
     if state_key not in st.session_state:
@@ -416,11 +408,19 @@ def render_weeks_buttons(df_long, date_from, date_to, key_prefix):
         return date_from, date_to
 
     st.markdown(
-        f"<p style='font-size:11px;color:{GREY_TXT};margin:0 0 4px;font-weight:600;'>"
-        f"Недели в периоде:</p>",
+        f"""<p style='font-size:11px;color:{GREY_TXT};margin:0 0 4px;font-weight:600;'>
+        Недели в периоде:</p>
+        <style>
+        div.weeks-row-{key_prefix} ~ div button[data-testid="stBaseButton-primary"],
+        div.weeks-row-{key_prefix} ~ div button[data-testid="stBaseButton-secondary"] {{
+            font-size: 11px !important; padding: 6px 4px !important;
+            min-width: 0 !important; white-space: nowrap !important;
+        }}
+        </style>
+        <div class="weeks-row-{key_prefix}"></div>""",
         unsafe_allow_html=True
     )
-    items = [("all", "Весь период")] + [(d.strftime("%Y-%m-%d"), d.strftime("%d.%m")) for d in weeks_in_period[:9]]
+    items = [("all", "Все")] + [(d.strftime("%Y-%m-%d"), d.strftime("%d.%m")) for d in weeks_in_period[:9]]
     cols_w = st.columns(len(items))
     for i, (val, lbl) in enumerate(items):
         with cols_w[i]:
@@ -497,7 +497,7 @@ if p == "summary":
     v_38, p_38, d_38 = get_delta(df, "metric_smr_38", eff_from, eff_to)
     v_39, p_39, d_39 = get_delta(df, "metric_smr_39", eff_from, eff_to)
 
-    # ════ Q1 + Q2 ════
+    # ════ Q1 + Q2: Q1 = метрики 1,3 + график "Качество..."; Q2 = график "Задачи" + метрики 2 и 38/39 ════
     q1, q2 = st.columns([1, 1], gap="large")
 
     with q1:
@@ -544,62 +544,8 @@ if p == "summary":
             st.plotly_chart(f1, use_container_width=True, config={"displayModeBar": False})
 
     with q2:
-        # второй верхний график — Качество (повтор основного с метриками 10/7)
+        # Q2: график "Задачи" слева, плашки справа (Кол-во ВСП и Кол-во задач/Хроник)
         g, m = st.columns([2.2, 1], gap="small")
-        with g:
-            chart_title("Качество работы с отклонениями: пораженность и счётчик повторов")
-            df3m_from = (pd.Timestamp(eff_to) - pd.DateOffset(months=3)).date()
-            s_10 = get_series(df, "metric_smr_10", df3m_from, eff_to)
-            s_7  = get_series(df, "metric_smr_7",  df3m_from, eff_to)
-            all_w = sorted(set(s_10["date_end"].tolist()) | set(s_7["date_end"].tolist()))
-            x_lbl = [d.strftime("%d.%m") for d in all_w]
-            map_10 = dict(zip(s_10["date_end"], s_10["value_s"]))
-            map_7  = dict(zip(s_7["date_end"],  s_7["value_s"]))
-            y_10 = [map_10.get(d) for d in all_w]
-            y_7  = [map_7.get(d)  for d in all_w]
-            n10 = get_metric_name(df, "metric_smr_10")
-            n7  = get_metric_name(df, "metric_smr_7")
-            fX = go.Figure()
-            fX.add_trace(go.Bar(name=n10, x=x_lbl, y=y_10,
-                marker_color=GREEN, opacity=0.9, yaxis="y1",
-                hovertemplate="<b>%{x}</b><br>"+n10+": %{y:.2f}<extra></extra>"))
-            fX.add_trace(go.Bar(name=n7, x=x_lbl, y=y_7,
-                marker_color=YELLOW, opacity=0.9, yaxis="y2",
-                hovertemplate="<b>%{x}</b><br>"+n7+": %{y:.2f}<extra></extra>"))
-            fX.update_layout(
-                height=220, margin=dict(t=14, b=32, l=42, r=46),
-                paper_bgcolor=BG, plot_bgcolor=BG,
-                font=dict(size=10, color=GREY_TXT),
-                barmode="group", bargap=0.25, bargroupgap=0.05,
-                showlegend=True,
-                legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
-                xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
-                yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
-                yaxis2=dict(overlaying="y", side="right",
-                            gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10)),
-            )
-            st.plotly_chart(fX, use_container_width=True, config={"displayModeBar": False})
-        # правая плашка убрана по требованию — оставляем пустое место чтобы не ломать сетку
-        with m:
-            st.markdown("<div style='height:108px;'></div>", unsafe_allow_html=True)
-
-    st.markdown("<hr style='margin:8px 0 12px;border:none;border-top:1px solid #E0E0DA;'>",
-                unsafe_allow_html=True)
-
-    # ════ Q3 + Q4 ════
-    q3, q4 = st.columns([1, 1], gap="large")
-
-    with q3:
-        m, g = st.columns([1, 2.2], gap="small")
-        with m:
-            metric_card("Кол-во ВСП с отклонениями",
-                        fmt_num(v_2),
-                        delta=fmt_delta(p_2), delta_dir=d_2 or "up", style="orange",
-                        right_text=right_2, delta_label="к пред. периоду")
-            metric_pair("Кол-во родит.задач / экскалированных",
-                        fmt_num(v_38), fmt_delta(p_38),
-                        fmt_num(v_39), fmt_delta(p_39),
-                        "yellow", d_38 or "up", d_39 or "up")
         with g:
             chart_title("Задачи")
             df3m_from = (pd.Timestamp(eff_to) - pd.DateOffset(months=3)).date()
@@ -631,10 +577,15 @@ if p == "summary":
                 yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
             )
             st.plotly_chart(f3, use_container_width=True, config={"displayModeBar": False})
-
-    with q4:
-        # правая нижняя клетка — пустая (все плашки и графики из неё удалены)
-        st.markdown("<div style='height:228px;'></div>", unsafe_allow_html=True)
+        with m:
+            metric_card("Кол-во ВСП с отклонениями",
+                        fmt_num(v_2),
+                        delta=fmt_delta(p_2), delta_dir=d_2 or "up", style="orange",
+                        right_text=right_2, delta_label="к пред. периоду")
+            metric_pair("Кол-во родит.задач / экскалированных",
+                        fmt_num(v_38), fmt_delta(p_38),
+                        fmt_num(v_39), fmt_delta(p_39),
+                        "yellow", d_38 or "up", d_39 or "up")
 
     # ── кнопка скачивания ──────────────────────────────────────────────
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
@@ -699,7 +650,7 @@ else:
 
     cards = [
         ("Доля по Банку",              fmt_num(v_46, "%", 1),                    fmt_delta(p_46), d_46 or "up", GREEN),
-        ("Целевое значение",           fmt_num(v_45, "%", 1) if v_45 is not None else "—", "цель", "up", "#5F5E5A"),
+        ("Целевое значение",           fmt_num(v_45, "%", 1) if v_45 is not None else "—", "", "up", "#5F5E5A"),
         ("Кол-во родит.задач / эскал.", qty_pair,                                fmt_delta(p_40), d_40 or "up", YELLOW),
         ("Доля устранённых",           fmt_num(v_34, "%", 1),                    fmt_delta(p_34), d_34 or "up", LIME),
         ("Пораженность",               fmt_num(v_10, "%", 1),                    fmt_delta(p_10), d_10 or "up", GREEN),
@@ -730,12 +681,23 @@ else:
         f5 = go.Figure()
         f5.add_trace(go.Bar(name="Доля БМО, %", x=x_lbl, y=y_46,
             marker_color=GREEN, opacity=0.85,
+            width=[0.45]*len(x_lbl),  # фикс. ширина столбца (в долях категории)
             hovertemplate="<b>%{x}</b><br>Доля БМО: %{y:.1f}%<extra></extra>"))
         f5.add_trace(go.Scatter(name="Целевое значение", x=x_lbl, y=y_45,
             mode="lines+markers",
             line=dict(color=ORANGE, width=2.5, dash="dash"),
             marker=dict(size=6, color=ORANGE),
             hovertemplate="<b>%{x}</b><br>Цель: %{y:.1f}%<extra></extra>"))
+        # Если данных мало — расширяем категориальную ось, оси прижимаем влево
+        n_pts = max(len(x_lbl), 1)
+        if n_pts <= 3:
+            # ставим фиксированный диапазон, прижимаем влево
+            xaxis_cfg = dict(
+                type="category", gridcolor=GRID, tickfont=dict(size=10),
+                range=[-0.5, 7.5],  # резервируем 8 позиций → столбец узкий и слева
+            )
+        else:
+            xaxis_cfg = dict(type="category", gridcolor=GRID, tickfont=dict(size=10))
         f5.update_layout(
             height=240, margin=dict(t=10, b=30, l=42, r=8),
             paper_bgcolor=BG, plot_bgcolor=BG,
@@ -743,7 +705,7 @@ else:
             bargap=0.4,
             showlegend=True,
             legend=dict(orientation="h", y=1.14, x=0, font=dict(size=10)),
-            xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
+            xaxis=xaxis_cfg,
             yaxis=dict(gridcolor=GRID, tickfont=dict(size=10), ticksuffix="%"),
         )
         st.plotly_chart(f5, use_container_width=True, config={"displayModeBar": False})
