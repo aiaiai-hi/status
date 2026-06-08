@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.graph_objects as go
 import pandas as pd
 from datetime import date, timedelta
@@ -262,24 +263,83 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
     z-index: 1000;
 }}
 .info-badge:hover::after {{ opacity: 1; }}
-/* Контейнер с border=True — белый фон. Покрываем разные версии Streamlit */
-div[data-testid="stVerticalBlockBorderWrapper"] {{
+/* Контейнер с border=True — белый фон. Перекрываем все возможные testid */
+div[data-testid="stVerticalBlockBorderWrapper"],
+div[data-testid="stContainer"],
+div[data-testid="stHorizontalBlock"] > div > div[data-testid="stVerticalBlockBorderWrapper"] {{
     background-color: #ffffff !important;
     border-radius: 12px !important;
 }}
-/* Все вложенные блоки внутри border-wrapper тоже прозрачные, чтобы не подмешивался зелёный */
-div[data-testid="stVerticalBlockBorderWrapper"] > div,
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"],
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stElementContainer"] {{
+/* Все возможные классы Streamlit для border-обёртки */
+div[class*="st-emotion-cache"]:has(> div [data-testid="stPlotlyChart"]) {{
+    background-color: #ffffff !important;
+}}
+/* Заголовок графика внутри карточки тоже на белом фоне */
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"],
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdown"] {{
     background-color: transparent !important;
 }}
-/* Сам Plotly график тоже белый, на всякий случай */
+/* Plotly уже белый, но добавим на блок-обёртку */
 div[data-testid="stPlotlyChart"] {{
     background-color: #ffffff !important;
     border-radius: 8px !important;
 }}
 </style>
+<script>
+// Надёжный фоллбек: после рендера красим все обёртки графиков в белый
+(function paintChartCards(){{
+  function paint(){{
+    // Все Plotly-графики
+    document.querySelectorAll('[data-testid="stPlotlyChart"]').forEach(el => {{
+      el.style.backgroundColor = '#ffffff';
+      el.style.borderRadius = '8px';
+      // Ищем родителя с border (он же контейнер) и красим его тоже
+      let parent = el.parentElement;
+      for (let i = 0; i < 8 && parent; i++) {{
+        if (parent.getAttribute && parent.getAttribute('data-testid') === 'stVerticalBlockBorderWrapper') {{
+          parent.style.backgroundColor = '#ffffff';
+          parent.style.borderRadius = '12px';
+          break;
+        }}
+        const cs = window.getComputedStyle(parent);
+        if (cs.borderStyle && cs.borderStyle !== 'none' && cs.borderWidth !== '0px') {{
+          parent.style.backgroundColor = '#ffffff';
+          parent.style.borderRadius = '12px';
+        }}
+        parent = parent.parentElement;
+      }}
+    }});
+  }}
+  paint();
+  const obs = new MutationObserver(() => setTimeout(paint, 50));
+  obs.observe(document.body, {{ childList: true, subtree: true }});
+}})();
+</script>
 """, unsafe_allow_html=True)
+
+# ── JS-инжектор через iframe для надёжного применения стиля ───────────────
+components.html("""
+<script>
+const parentDoc = window.parent.document;
+function paintCards() {
+  // Все обёртки контейнеров с рамкой
+  parentDoc.querySelectorAll('[data-testid="stVerticalBlockBorderWrapper"]').forEach(el => {
+    el.style.backgroundColor = '#ffffff';
+    el.style.borderRadius = '12px';
+  });
+  // Все Plotly-графики
+  parentDoc.querySelectorAll('[data-testid="stPlotlyChart"]').forEach(el => {
+    el.style.backgroundColor = '#ffffff';
+    el.style.borderRadius = '8px';
+  });
+}
+paintCards();
+// Streamlit может перерисовать DOM при rerun
+const obs = new MutationObserver(() => paintCards());
+obs.observe(parentDoc.body, { childList: true, subtree: true });
+setInterval(paintCards, 500);
+</script>
+""", height=0)
 
 # ── загружаем данные ──────────────────────────────────────────────────────
 try:
@@ -638,7 +698,7 @@ if p == "summary":
                     hovertemplate="<b>%{x}</b><br>"+n5+": %{y:.2f}<extra></extra>"))
                 f_q.update_layout(
                     height=210, margin=dict(t=14, b=32, l=42, r=8),
-                    paper_bgcolor=BG, plot_bgcolor=BG,
+                    paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
                     font=dict(size=10, color=GREY_TXT),
                     barmode="group", bargap=0.25, bargroupgap=0.05,
                     showlegend=True,
@@ -672,7 +732,7 @@ if p == "summary":
                     hovertemplate="<b>%{x}</b><br>"+n39+": %{y:,.0f}<extra></extra>"))
                 f_t.update_layout(
                     height=210, margin=dict(t=14, b=32, l=42, r=8),
-                    paper_bgcolor=BG, plot_bgcolor=BG,
+                    paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
                     font=dict(size=10, color=GREY_TXT),
                     barmode="stack", bargap=0.3,
                     showlegend=True,
@@ -742,7 +802,7 @@ if p == "summary":
                 ))
                 f_dev.update_layout(
                     height=210, margin=dict(t=14, b=32, l=42, r=8),
-                    paper_bgcolor=BG, plot_bgcolor=BG,
+                    paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
                     font=dict(size=10, color=GREY_TXT),
                     showlegend=True,
                     legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
@@ -777,7 +837,7 @@ if p == "summary":
                     hovertemplate="<b>%{x}</b><br>"+n2+": %{y:,.0f}<extra></extra>"))
                 f_pv.update_layout(
                     height=210, margin=dict(t=14, b=32, l=42, r=8),
-                    paper_bgcolor=BG, plot_bgcolor=BG,
+                    paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
                     font=dict(size=10, color=GREY_TXT),
                     showlegend=True,
                     legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
@@ -921,7 +981,7 @@ else:
                 hovertemplate="<b>%{x}</b><br>Цель: %{y:.1f}%<extra></extra>"))
             f5.update_layout(
                 height=240, margin=dict(t=10, b=30, l=42, r=8),
-                paper_bgcolor=BG, plot_bgcolor=BG,
+                paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
                 font=dict(size=10, color=GREY_TXT),
                 bargap=0.4,
                 showlegend=True,
@@ -958,7 +1018,7 @@ else:
                 hovertemplate="<b>%{x}</b><br>"+n7+": %{y:.2f}<extra></extra>"))
             fQ.update_layout(
                 height=240, margin=dict(t=10, b=30, l=42, r=46),
-                paper_bgcolor=BG, plot_bgcolor=BG,
+                paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
                 font=dict(size=10, color=GREY_TXT),
                 barmode="group", bargap=0.25, bargroupgap=0.05,
                 showlegend=True,
