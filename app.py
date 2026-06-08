@@ -25,7 +25,7 @@ FUNNEL_LABELS      = ["Тип А", "Тип Б", "Тип В"]
 # ── загрузка данных ────────────────────────────────────────────────────────
 @st.cache_data
 def load_data():
-    df = pd.read_excel("Книга2.xlsx", header=1)
+    df = pd.read_excel("Metrics.xlsx", header=1)
     date_cols = [c for c in df.columns if hasattr(c, "year")]
     records = []
     for _, row in df.iterrows():
