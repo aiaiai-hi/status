@@ -186,8 +186,8 @@ p = st.session_state.page
 # ── глобальный CSS ─────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
-/* фон страницы — очень светлый зелёный */
-.stApp {{ background-color: #F6FAF4 !important; }}
+/* фон страницы — мягкий бежевый (как в макете) */
+.stApp {{ background-color: #F4F1E8 !important; }}
 .block-container {{ padding-top: 1.5rem !important; max-width: 100% !important; }}
 button[data-testid="stBaseButton-primary"],
 button[data-testid="stBaseButton-secondary"] {{
@@ -263,58 +263,12 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
     z-index: 1000;
 }}
 .info-badge:hover::after {{ opacity: 1; }}
-/* Контейнер с border=True — белый фон. Перекрываем все возможные testid */
-div[data-testid="stVerticalBlockBorderWrapper"],
-div[data-testid="stContainer"],
-div[data-testid="stHorizontalBlock"] > div > div[data-testid="stVerticalBlockBorderWrapper"] {{
-    background-color: #ffffff !important;
-    border-radius: 12px !important;
-}}
-/* Все возможные классы Streamlit для border-обёртки */
-div[class*="st-emotion-cache"]:has(> div [data-testid="stPlotlyChart"]) {{
-    background-color: #ffffff !important;
-}}
-/* Заголовок графика внутри карточки тоже на белом фоне */
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"],
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdown"] {{
-    background-color: transparent !important;
-}}
-/* Plotly уже белый, но добавим на блок-обёртку */
+/* Plotly график сам белый */
 div[data-testid="stPlotlyChart"] {{
     background-color: #ffffff !important;
     border-radius: 8px !important;
 }}
 </style>
-<script>
-// Надёжный фоллбек: после рендера красим все обёртки графиков в белый
-(function paintChartCards(){{
-  function paint(){{
-    // Все Plotly-графики
-    document.querySelectorAll('[data-testid="stPlotlyChart"]').forEach(el => {{
-      el.style.backgroundColor = '#ffffff';
-      el.style.borderRadius = '8px';
-      // Ищем родителя с border (он же контейнер) и красим его тоже
-      let parent = el.parentElement;
-      for (let i = 0; i < 8 && parent; i++) {{
-        if (parent.getAttribute && parent.getAttribute('data-testid') === 'stVerticalBlockBorderWrapper') {{
-          parent.style.backgroundColor = '#ffffff';
-          parent.style.borderRadius = '12px';
-          break;
-        }}
-        const cs = window.getComputedStyle(parent);
-        if (cs.borderStyle && cs.borderStyle !== 'none' && cs.borderWidth !== '0px') {{
-          parent.style.backgroundColor = '#ffffff';
-          parent.style.borderRadius = '12px';
-        }}
-        parent = parent.parentElement;
-      }}
-    }});
-  }}
-  paint();
-  const obs = new MutationObserver(() => setTimeout(paint, 50));
-  obs.observe(document.body, {{ childList: true, subtree: true }});
-}})();
-</script>
 """, unsafe_allow_html=True)
 
 # ── JS-инжектор через iframe для надёжного применения стиля ───────────────
@@ -322,19 +276,23 @@ components.html("""
 <script>
 const parentDoc = window.parent.document;
 function paintCards() {
-  // Все обёртки контейнеров с рамкой
-  parentDoc.querySelectorAll('[data-testid="stVerticalBlockBorderWrapper"]').forEach(el => {
-    el.style.backgroundColor = '#ffffff';
-    el.style.borderRadius = '12px';
-  });
-  // Все Plotly-графики
-  parentDoc.querySelectorAll('[data-testid="stPlotlyChart"]').forEach(el => {
-    el.style.backgroundColor = '#ffffff';
-    el.style.borderRadius = '8px';
+  // Красим только Plotly-графики и их непосредственного border-родителя
+  parentDoc.querySelectorAll('[data-testid="stPlotlyChart"]').forEach(plot => {
+    plot.style.backgroundColor = '#ffffff';
+    plot.style.borderRadius = '8px';
+    // Идём вверх по дереву, ищем ближайший stVerticalBlockBorderWrapper
+    let p = plot.parentElement;
+    for (let i = 0; i < 10 && p; i++) {
+      if (p.getAttribute && p.getAttribute('data-testid') === 'stVerticalBlockBorderWrapper') {
+        p.style.backgroundColor = '#ffffff';
+        p.style.borderRadius = '12px';
+        break;
+      }
+      p = p.parentElement;
+    }
   });
 }
 paintCards();
-// Streamlit может перерисовать DOM при rerun
 const obs = new MutationObserver(() => paintCards());
 obs.observe(parentDoc.body, { childList: true, subtree: true });
 setInterval(paintCards, 500);
