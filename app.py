@@ -117,18 +117,23 @@ def metric_card(label, value, delta=None, delta_dir="up", style="green"):
       {delta_html}
     </div>""", unsafe_allow_html=True)
 
-def metric_pair(label, v1, d1, v2, d2, style="yellow"):
+def metric_pair(label, v1, d1, v2, d2, style="yellow", d1_dir="up", d2_dir="up"):
     bg, fg, up_col, down_col = CARD_STYLES[style]
+    a1 = "▲" if d1_dir == "up" else "▼"
+    a2 = "▲" if d2_dir == "up" else "▼"
+    c1 = up_col if d1_dir == "up" else down_col
+    c2 = up_col if d2_dir == "up" else down_col
     st.markdown(f"""
     <div style="background:{bg};border-radius:12px;padding:11px 13px 12px;
                 color:{fg};box-shadow:0 1px 4px rgba(0,0,0,0.10);
                 min-height:108px;display:flex;flex-direction:column;
                 margin-bottom:8px;">
       <div style="font-size:11px;opacity:0.85;line-height:1.25;font-weight:500;margin-bottom:6px;">{label}</div>
-      <div style="font-size:20px;font-weight:600;letter-spacing:-0.5px;">{v1}</div>
-      <div style="font-size:10px;color:{up_col};font-weight:600;margin-top:2px;">▲ {d1}</div>
-      <div style="font-size:15px;font-weight:600;letter-spacing:-0.3px;margin-top:4px;">/ {v2}</div>
-      <div style="font-size:10px;color:{up_col};font-weight:600;margin-top:2px;">▲ {d2}</div>
+      <div style="font-size:20px;font-weight:600;letter-spacing:-0.5px;">{v1} / {v2}</div>
+      <div style="display:flex;gap:14px;margin-top:4px;">
+        <div style="font-size:10px;color:{c1};font-weight:600;">{a1} {d1}</div>
+        <div style="font-size:10px;color:{c2};font-weight:600;">{a2} {d2}</div>
+      </div>
     </div>""", unsafe_allow_html=True)
 
 def chart_title(t):
@@ -174,10 +179,10 @@ if p == "summary":
     with q1:
         m, g = st.columns([1, 2.2], gap="small")
         with m:
-            metric_card("Кол-во видов отклонений", "16", "+6.7%", "up", "dark-green")
-            metric_card("Кол-во ВСП с отклонениями", "850", "+3.2%", "up", "green")
+            metric_card("Количество видов отклонений", "16", "+6.7%", "up", "dark-green")
+            metric_card("Количество человек с отклонениями", "1 000", "-2.1%", "down", "green")
         with g:
-            chart_title("Пораженность / Счётчик повторов")
+            chart_title("Пораженность отклонениями")
             f1 = go.Figure()
             f1.add_trace(go.Bar(name="Пораженность", x=weeks, y=[120, 135, 128, 142],
                                 marker_color=GREEN, opacity=0.9,
@@ -200,7 +205,7 @@ if p == "summary":
     with q2:
         g, m = st.columns([2.2, 1], gap="small")
         with g:
-            chart_title("Динамика видов отклонений (3 мес.)")
+            chart_title("Средний счётчик повторов")
             f2 = go.Figure(go.Scatter(
                 x=months, y=[14, 15, 16, 16], mode="lines+markers",
                 line=dict(color=GREEN, width=2.5),
@@ -225,10 +230,10 @@ if p == "summary":
     with q3:
         m, g = st.columns([1, 2.2], gap="small")
         with m:
-            metric_card("Кол-во человек с отклонениями", "1 000", "-2.1%", "down", "black")
-            metric_pair("Задачи / Хроники", "1 600", "+4%", "1 525", "+2%", "yellow")
+            metric_card("Кол-во ВСП с отклонениями", "850", "+3.2%", "up", "black")
+            metric_pair("Кол-во задач / Хроник", "1 600", "+4%", "1 525", "+2%", "yellow", "up", "up")
         with g:
-            chart_title("Задачи / Хроники по неделям")
+            chart_title("Доля устранённых отклонений (за 8 недель)")
             f3 = go.Figure()
             f3.add_trace(go.Bar(name="Задачи", x=weeks, y=[1450, 1520, 1580, 1600],
                                 marker_color=DARK_GREEN, opacity=0.9,
@@ -251,7 +256,7 @@ if p == "summary":
     with q4:
         g, m = st.columns([2.2, 1], gap="small")
         with g:
-            chart_title("Скорость устранения (3 мес.)")
+            chart_title("Скорость устранения (за 4 недели)")
             f4 = go.Figure(go.Scatter(
                 x=months, y=[5.8, 5.7, 5.7, 5.6], mode="lines+markers",
                 line=dict(color=ORANGE, width=2.5),
@@ -299,12 +304,14 @@ else:
     cards = [
         ("Доля по Банку", "50.1%", "+0.2%", "up", GREEN),
         ("Целевое значение", "52%", "цель", "up", "#5F5E5A"),
-        ("Счётчик повторов", "5.6 нед.", "-0.2", "down", ORANGE),
-        ("Задачи / хроники", "1 600", "+4%", "up", YELLOW),
+        ("Количество задач / хроник", "1 600", "+4%", "up", YELLOW),
         ("Доля устранённых", "53%", "+1.1%", "up", LIME),
-        ("Скорость устранения", "82%", "-2%", "down", DARK_GREEN),
+        ("Пораженность", "142", "+5.2%", "up", GREEN),
+        ("Средний счётчик повторов", "5.6 нед.", "-0.2", "down", ORANGE),
+        ("Кол-во объектов чел / ВСП", "1000 / 850", "+3%", "up", DARK_GREEN),
+        ("Скорость устранения", "82%", "-2%", "down", BLACK),
     ]
-    cols = st.columns(6)
+    cols = st.columns(8)
     for c, (lbl, v, d, dr, ac) in zip(cols, cards):
         with c:
             st.markdown(bmo_card(lbl, v, d, dr, ac), unsafe_allow_html=True)
