@@ -328,21 +328,40 @@ if p == "summary":
             metric_card("Количество человек с отклонениями",
                         fmt_num(v_3), fmt_delta(p_3), d_3 or "up", "green")
         with g:
-            chart_title("Пораженность отклонениями")
-            s_1 = get_series(df, "metric_smr_1", date_from, date_to)
-            x_lbl = s_1["date_end"].dt.strftime("%d.%m").tolist()
-            f1 = go.Figure(go.Bar(
-                x=x_lbl, y=s_1["value_s"].tolist(),
-                marker_color=GREEN, opacity=0.9,
-                hovertemplate="<b>%{x}</b><br>Виды отклонений: %{y}<extra></extra>",
+            chart_title("Качество работы с отклонениями")
+            # 3 месяца от date_to
+            df3m_from = (pd.Timestamp(date_to) - pd.DateOffset(months=3)).date()
+            s_4 = get_series(df, "metric_smr_4", df3m_from, date_to)
+            s_5 = get_series(df, "metric_smr_5", df3m_from, date_to)
+            x_lbl = s_4["date_end"].dt.strftime("%d.%m").tolist()
+            f1 = go.Figure()
+            f1.add_trace(go.Bar(
+                name="Счётчик повторов (шт.)",
+                x=x_lbl, y=s_4["value_s"].tolist(),
+                marker_color=DARK_GREEN, opacity=0.9, yaxis="y1",
+                hovertemplate="<b>%{x}</b><br>Счётчик: %{y:.1f}<extra></extra>",
+            ))
+            f1.add_trace(go.Bar(
+                name="Пораженность (%)",
+                x=s_5["date_end"].dt.strftime("%d.%m").tolist(),
+                y=s_5["value_s"].tolist(),
+                marker_color=YELLOW, opacity=0.9, yaxis="y2",
+                hovertemplate="<b>%{x}</b><br>Пораженность: %{y:.1f}%<extra></extra>",
             ))
             f1.update_layout(
-                height=220, margin=dict(t=14, b=32, l=42, r=8),
+                height=220, margin=dict(t=14, b=32, l=42, r=46),
                 paper_bgcolor=BG, plot_bgcolor=BG,
                 font=dict(size=10, color=GREY_TXT),
-                bargap=0.35, showlegend=False,
+                barmode="group", bargap=0.25, bargroupgap=0.08,
+                showlegend=True,
+                legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
                 xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
-                yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
+                yaxis=dict(gridcolor=GRID, tickfont=dict(size=10),
+                           title=dict(text="шт.", font=dict(size=10, color=GREY_TXT))),
+                yaxis2=dict(overlaying="y", side="right",
+                            gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10),
+                            ticksuffix="%",
+                            title=dict(text="%", font=dict(size=10, color=GREY_TXT))),
             )
             st.plotly_chart(f1, use_container_width=True, config={"displayModeBar": False})
 
@@ -350,16 +369,25 @@ if p == "summary":
         g, m = st.columns([2.2, 1], gap="small")
         with g:
             chart_title("Средний счётчик повторов")
-            # metric_smr_2 как пример тренда — у вас в макете это был линейный график
-            s_2 = get_series(df, "metric_smr_2", date_from, date_to)
-            x_lbl = s_2["date_end"].dt.strftime("%d.%m").tolist()
+            # 6 месяцев от date_to, помесячно (средний за месяц)
+            df6m_from = (pd.Timestamp(date_to) - pd.DateOffset(months=6)).date()
+            s_36 = get_series(df, "metric_smr_36", df6m_from, date_to)
+            if not s_36.empty:
+                tmp = s_36.copy()
+                tmp["month"] = tmp["date_end"].dt.to_period("M")
+                monthly = tmp.groupby("month")["value_s"].mean().reset_index()
+                monthly["lbl"] = monthly["month"].dt.strftime("%b %y")
+                x_lbl  = monthly["lbl"].tolist()
+                y_vals = monthly["value_s"].tolist()
+            else:
+                x_lbl, y_vals = [], []
             f2 = go.Figure(go.Scatter(
-                x=x_lbl, y=s_2["value_s"].tolist(),
+                x=x_lbl, y=y_vals,
                 mode="lines+markers",
                 line=dict(color=GREEN, width=2.5),
-                marker=dict(size=6, color=GREEN),
+                marker=dict(size=7, color=GREEN),
                 fill="tozeroy", fillcolor="rgba(42,126,46,0.14)",
-                hovertemplate="<b>%{x}</b><br>Значение: %{y}<extra></extra>",
+                hovertemplate="<b>%{x}</b><br>Значение: %{y:.2f}<extra></extra>",
             ))
             f2.update_layout(
                 height=220, margin=dict(t=14, b=32, l=42, r=8),
@@ -390,27 +418,33 @@ if p == "summary":
                         fmt_num(v_39), fmt_delta(p_39),
                         "yellow", d_38 or "up", d_39 or "up")
         with g:
-            chart_title("Доля устранённых отклонений (за 8 недель)")
-            # тренд по metric_smr_38 / 39 — две серии
-            s_38 = get_series(df, "metric_smr_38", date_from, date_to)
-            s_39 = get_series(df, "metric_smr_39", date_from, date_to)
+            chart_title("Задачи")
+            # 3 месяца недельно: 38 внизу (родительские), 39 сверху (эскалированные)
+            df3m_from = (pd.Timestamp(date_to) - pd.DateOffset(months=3)).date()
+            s_38 = get_series(df, "metric_smr_38", df3m_from, date_to)
+            s_39 = get_series(df, "metric_smr_39", df3m_from, date_to)
             x_lbl = s_38["date_end"].dt.strftime("%d.%m").tolist()
             f3 = go.Figure()
-            f3.add_trace(go.Bar(name="Задачи", x=x_lbl, y=s_38["value_s"].tolist(),
-                                marker_color=DARK_GREEN, opacity=0.9,
-                                hovertemplate="<b>%{x}</b><br>Задачи: %{y:,}<extra></extra>"))
-            f3.add_trace(go.Bar(name="Хроники",
-                                x=s_39["date_end"].dt.strftime("%d.%m").tolist(),
-                                y=s_39["value_s"].tolist(),
-                                marker_color=LIME, opacity=0.9,
-                                hovertemplate="<b>%{x}</b><br>Хроники: %{y:,}<extra></extra>"))
+            f3.add_trace(go.Bar(
+                name=get_metric_name(df, "metric_smr_38"),
+                x=x_lbl, y=s_38["value_s"].tolist(),
+                marker_color=DARK_GREEN, opacity=0.9,
+                hovertemplate="<b>%{x}</b><br>"+get_metric_name(df, "metric_smr_38")+": %{y:,.0f}<extra></extra>",
+            ))
+            f3.add_trace(go.Bar(
+                name=get_metric_name(df, "metric_smr_39"),
+                x=s_39["date_end"].dt.strftime("%d.%m").tolist(),
+                y=s_39["value_s"].tolist(),
+                marker_color=LIME, opacity=0.9,
+                hovertemplate="<b>%{x}</b><br>"+get_metric_name(df, "metric_smr_39")+": %{y:,.0f}<extra></extra>",
+            ))
             f3.update_layout(
                 height=220, margin=dict(t=14, b=32, l=42, r=8),
                 paper_bgcolor=BG, plot_bgcolor=BG,
                 font=dict(size=10, color=GREY_TXT),
-                barmode="group", bargap=0.25, bargroupgap=0.08,
+                barmode="stack", bargap=0.3,
                 showlegend=True,
-                legend=dict(orientation="h", y=1.12, x=0, font=dict(size=10)),
+                legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9)),
                 xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
                 yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
             )
@@ -419,16 +453,26 @@ if p == "summary":
     with q4:
         g, m = st.columns([2.2, 1], gap="small")
         with g:
-            chart_title("Скорость устранения (за 4 недели)")
-            s_3 = get_series(df, "metric_smr_3", date_from, date_to)
-            x_lbl = s_3["date_end"].dt.strftime("%d.%m").tolist()
+            chart_title(get_metric_name(df, "metric_smr_37"))
+            # 6 месяцев, помесячно
+            df6m_from = (pd.Timestamp(date_to) - pd.DateOffset(months=6)).date()
+            s_37 = get_series(df, "metric_smr_37", df6m_from, date_to)
+            if not s_37.empty:
+                tmp = s_37.copy()
+                tmp["month"] = tmp["date_end"].dt.to_period("M")
+                monthly = tmp.groupby("month")["value_s"].mean().reset_index()
+                monthly["lbl"] = monthly["month"].dt.strftime("%b %y")
+                x_lbl  = monthly["lbl"].tolist()
+                y_vals = monthly["value_s"].tolist()
+            else:
+                x_lbl, y_vals = [], []
             f4 = go.Figure(go.Scatter(
-                x=x_lbl, y=s_3["value_s"].tolist(),
+                x=x_lbl, y=y_vals,
                 mode="lines+markers",
                 line=dict(color=ORANGE, width=2.5),
-                marker=dict(size=6, color=ORANGE),
+                marker=dict(size=7, color=ORANGE),
                 fill="tozeroy", fillcolor="rgba(224,123,27,0.14)",
-                hovertemplate="<b>%{x}</b><br>Значение: %{y}<extra></extra>",
+                hovertemplate="<b>%{x}</b><br>Значение: %{y:.2f}<extra></extra>",
             ))
             f4.update_layout(
                 height=220, margin=dict(t=14, b=32, l=42, r=8),
