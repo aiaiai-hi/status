@@ -1,561 +1,448 @@
 import streamlit as st
 import plotly.graph_objects as go
-import pandas as pd
-import numpy as np
-from datetime import timedelta, date
+from datetime import date
 
 st.set_page_config(page_title="ИС Статус. Дэшборд", layout="wide")
 
-BLUE    = "#1D5FA5"
-BLUE2   = "#2563EB"
-TEAL    = "#0F766E"
-PURPLE  = "#7C3AED"
-INDIGO  = "#4338CA"
-BAR_B   = "#378ADD"
-BAR_T   = "#1D9E75"
-LINE_C  = "#D85A30"
-LINE_A  = "#BA7517"
-LINE_P  = "#7F77DD"
-BG      = "rgba(0,0,0,0)"
-GRID    = "rgba(128,128,128,0.15)"
+# ── фирменная палитра РСХБ ─────────────────────────────────────────────────
+BLACK       = "#1A1A1A"
+DARK_GREEN  = "#0F4D17"
+GREEN       = "#2A7E2E"
+LIME        = "#6BB934"
+LIME_LIGHT  = "#97D147"
+YELLOW      = "#F2C014"
+YELLOW_LT   = "#F9D63E"
+ORANGE      = "#E07B1B"
+ORANGE_LT   = "#F0A040"
+GREY_TXT    = "#5F5E5A"
+BG          = "rgba(0,0,0,0)"
+GRID        = "rgba(0,0,0,0.05)"
 
-FUNNEL_COLORS_LIST = ["#378ADD", "#1D9E75", "#BA7517"]
-FUNNEL_LABELS      = ["Тип А", "Тип Б", "Тип В"]
-
-# ── загрузка данных ────────────────────────────────────────────────────────
-@st.cache_data
-def load_data():
-    df = pd.read_excel("Metrics.xlsx", header=1)
-    date_cols = [c for c in df.columns if hasattr(c, "year")]
-    records = []
-    for _, row in df.iterrows():
-        mid   = str(row["Названия строк"]).strip()
-        mname = str(row["metric_name"]).strip() if pd.notna(row["metric_name"]) else ""
-        if not mid.startswith("metric_smr_"):
-            continue
-        for d in date_cols:
-            v = row[d]
-            if pd.notna(v):
-                records.append({"metric_id": mid, "metric_name": mname,
-                                 "date": pd.Timestamp(d), "value": float(v)})
-    long = pd.DataFrame(records)
-    long["date"] = pd.to_datetime(long["date"])
-    long = long.groupby(["metric_id", "metric_name", "date"], as_index=False)["value"].sum()
-    return long
+CARD_STYLES = {
+    "black":      (f"linear-gradient(135deg,{BLACK} 0%,#333333 100%)",       "#fff", YELLOW_LT,  "#FFC2A8"),
+    "dark-green": (f"linear-gradient(135deg,{DARK_GREEN} 0%,{GREEN} 100%)",  "#fff", YELLOW_LT,  "#FFC2A8"),
+    "green":      (f"linear-gradient(135deg,{GREEN} 0%,#4CA351 100%)",       "#fff", YELLOW_LT,  "#FFC2A8"),
+    "lime":       (f"linear-gradient(135deg,{LIME} 0%,{LIME_LIGHT} 100%)",   BLACK,  DARK_GREEN, "#B23A0C"),
+    "yellow":     (f"linear-gradient(135deg,{YELLOW} 0%,{YELLOW_LT} 100%)",  BLACK,  DARK_GREEN, "#B23A0C"),
+    "orange":     (f"linear-gradient(135deg,{ORANGE} 0%,{ORANGE_LT} 100%)",  "#fff", YELLOW_LT,  "#FFC2A8"),
+}
 
 # ── session state ──────────────────────────────────────────────────────────
 if "page" not in st.session_state:
     st.session_state.page = "summary"
 p = st.session_state.page
 
-# ── CSS ────────────────────────────────────────────────────────────────────
+# ── глобальный CSS ─────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
-.block-container {{ padding-top: 1.5rem !important; }}
+.block-container {{ padding-top: 1.5rem !important; max-width: 100% !important; }}
+
+/* кнопки навигации */
 button[data-testid="stBaseButton-primary"],
 button[data-testid="stBaseButton-secondary"] {{
-    white-space: nowrap !important; font-size: 14px !important; font-weight: 600 !important;
+    white-space: nowrap !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    padding: 9px 24px !important;
+    border-radius: 8px !important;
 }}
 button[data-testid="stBaseButton-secondary"] {{
-    background-color: #ffffff !important; color: {BLUE} !important;
-    border: 2px solid {BLUE} !important;
+    background-color: #ffffff !important;
+    color: {GREEN} !important;
+    border: 2px solid {GREEN} !important;
 }}
-button[data-testid="stBaseButton-secondary"]:hover {{ background-color: #e8f0fb !important; }}
+button[data-testid="stBaseButton-secondary"]:hover {{
+    background-color: #F0F8E8 !important;
+    border-color: {GREEN} !important;
+}}
 button[data-testid="stBaseButton-primary"] {{
-    background-color: {BLUE} !important; color: #ffffff !important;
-    border: 2px solid {BLUE} !important;
+    background-color: {GREEN} !important;
+    color: #fff !important;
+    border: 2px solid {GREEN} !important;
 }}
 button[data-testid="stBaseButton-primary"]:hover {{
-    background-color: #164d8a !important; border-color: #164d8a !important;
+    background-color: {DARK_GREEN} !important;
+    border-color: {DARK_GREEN} !important;
 }}
-/* убрать стрелки из date_input */
-input[type=date]::-webkit-calendar-picker-indicator {{ opacity: 0.6; }}
+
+/* поля даты — лаймовая рамка */
+div[data-baseweb="input"] > div {{
+    border-radius: 6px !important;
+    border-color: #B6D87C !important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
-# ── заголовок + навигация ──────────────────────────────────────────────────
+# ── заголовок ──────────────────────────────────────────────────────────────
 st.markdown(
-    f"<h1 style='font-size:28px;font-weight:700;color:{BLUE};margin-bottom:12px;'>"
-    "ИС Статус. Дэшборд</h1>", unsafe_allow_html=True)
+    f"<h1 style='font-size:28px;font-weight:600;color:{BLACK};margin:0 0 12px;letter-spacing:-0.3px;'>"
+    "ИС Статус. Дэшборд</h1>",
+    unsafe_allow_html=True,
+)
 
-c1, c2, _ = st.columns([0.9, 1.9, 7])
-with c1:
-    if st.button("Саммари", key="nav_summary",
+# ── навигация ──────────────────────────────────────────────────────────────
+n1, n2, _ = st.columns([0.9, 1.9, 7])
+with n1:
+    if st.button("Саммари", key="nav_s",
                  type="primary" if p == "summary" else "secondary",
                  use_container_width=True):
         st.session_state.page = "summary"; st.rerun()
-with c2:
-    if st.button("Влияние на бизнес. БМО", key="nav_bmo",
+with n2:
+    if st.button("Влияние на бизнес. БМО", key="nav_b",
                  type="primary" if p == "bmo" else "secondary",
                  use_container_width=True):
         st.session_state.page = "bmo"; st.rerun()
 
-st.markdown("<hr style='margin:10px 0 14px;border:none;border-top:1px solid #ddd;'>",
+st.markdown("<hr style='margin:10px 0 14px;border:none;border-top:1px solid #E0E0DA;'>",
             unsafe_allow_html=True)
 
 # ── хелперы ────────────────────────────────────────────────────────────────
-def chart_title(txt, size=15):
+def metric_card(label, value, delta=None, delta_dir="up", style="green"):
+    bg, fg, up_col, down_col = CARD_STYLES[style]
+    delta_html = ""
+    if delta:
+        col = up_col if delta_dir == "up" else down_col
+        arrow = "▲" if delta_dir == "up" else "▼"
+        delta_html = (f'<div style="font-size:11px;color:{col};font-weight:600;margin-top:4px;">'
+                      f'{arrow} {delta}</div>')
+    st.markdown(f"""
+    <div style="background:{bg};border-radius:12px;padding:11px 13px 12px;
+                color:{fg};box-shadow:0 1px 4px rgba(0,0,0,0.10);
+                min-height:108px;display:flex;flex-direction:column;
+                margin-bottom:8px;">
+      <div style="font-size:11px;opacity:0.9;line-height:1.25;font-weight:500;margin-bottom:6px;">
+        {label}
+      </div>
+      <div style="font-size:22px;font-weight:600;letter-spacing:-0.5px;">{value}</div>
+      {delta_html}
+    </div>""", unsafe_allow_html=True)
+
+def metric_pair(label, v1, d1, v2, d2, style="yellow"):
+    bg, fg, up_col, down_col = CARD_STYLES[style]
+    st.markdown(f"""
+    <div style="background:{bg};border-radius:12px;padding:11px 13px 12px;
+                color:{fg};box-shadow:0 1px 4px rgba(0,0,0,0.10);
+                min-height:108px;display:flex;flex-direction:column;
+                margin-bottom:8px;">
+      <div style="font-size:11px;opacity:0.85;line-height:1.25;font-weight:500;margin-bottom:6px;">{label}</div>
+      <div style="font-size:20px;font-weight:600;letter-spacing:-0.5px;">{v1}</div>
+      <div style="font-size:10px;color:{up_col};font-weight:600;margin-top:2px;">▲ {d1}</div>
+      <div style="font-size:15px;font-weight:600;letter-spacing:-0.3px;margin-top:4px;">/ {v2}</div>
+      <div style="font-size:10px;color:{up_col};font-weight:600;margin-top:2px;">▲ {d2}</div>
+    </div>""", unsafe_allow_html=True)
+
+def chart_title(t):
     st.markdown(
-        f'<p style="font-size:{size}px;font-weight:600;margin:0 0 4px;color:{BLUE};">{txt}</p>',
+        f'<p style="font-size:13px;font-weight:600;color:{BLACK};margin:0 0 4px;">{t}</p>',
         unsafe_allow_html=True)
 
-def get_series(df_long, metric_id, date_from, date_to):
-    mask = ((df_long["metric_id"] == metric_id) &
-            (df_long["date"] >= pd.Timestamp(date_from)) &
-            (df_long["date"] <= pd.Timestamp(date_to)))
-    return df_long[mask].sort_values("date")
-
-def get_name(df_long, metric_id):
-    rows = df_long[df_long["metric_id"] == metric_id]["metric_name"]
-    return rows.iloc[0] if not rows.empty else metric_id
-
-def last_val_delta(series):
-    if series.empty:
-        return None, None, None
-    last = series["value"].iloc[-1]
-    if len(series) >= 2:
-        prev  = series["value"].iloc[-2]
-        delta = last - prev
-        pct   = (delta / prev * 100) if prev != 0 else 0.0
-        return last, pct, delta
-    return last, None, None
-
-CARD_STYLES = {
-    "blue":   ("linear-gradient(135deg,#1D5FA5 0%,#2563EB 100%)", "#fff"),
-    "teal":   ("linear-gradient(135deg,#0F766E 0%,#14B8A6 100%)", "#fff"),
-    "purple": ("linear-gradient(135deg,#7C3AED 0%,#A78BFA 100%)", "#fff"),
-    "indigo": ("linear-gradient(135deg,#4338CA 0%,#818CF8 100%)", "#fff"),
-    "slate":  ("linear-gradient(135deg,#334155 0%,#64748B 100%)", "#fff"),
-}
-
-def metric_card(label, value_str, delta_pct=None, delta_raw=None, style="blue"):
-    bg, fg = CARD_STYLES[style]
-    if delta_pct is not None:
-        arrow     = "▲" if delta_raw > 0 else ("▼" if delta_raw < 0 else "→")
-        sign      = "+" if delta_pct >= 0 else ""
-        col_arrow = "#86EFAC" if delta_raw > 0 else ("#FCA5A5" if delta_raw < 0 else "#CBD5E1")
-        delta_html = (f'<span style="font-size:13px;color:{col_arrow};'
-                      f'font-weight:600;margin-left:6px;">'
-                      f'{arrow} {sign}{delta_pct:.1f}%</span>')
-    else:
-        delta_html = ""
-
-    st.markdown(f"""
-    <div style="background:{bg};border-radius:14px;padding:14px 16px;
-                color:{fg};margin-bottom:10px;
-                box-shadow:0 4px 15px rgba(0,0,0,0.12);">
-      <div style="font-size:13px;opacity:.85;line-height:1.3;
-                  margin-bottom:6px;font-weight:500;">{label}</div>
-      <div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap;">
-        <span style="font-size:26px;font-weight:700;letter-spacing:-0.5px;">{value_str}</span>
-        {delta_html}
-      </div>
-    </div>""", unsafe_allow_html=True)
-
-def render_metric(df_long, metric_id, date_from, date_to, fmt="{:.0f}", style="blue"):
-    s    = get_series(df_long, metric_id, date_from, date_to)
-    name = get_name(df_long, metric_id)
-    v, pct, raw = last_val_delta(s)
-    val_str = fmt.format(v) if v is not None else "—"
-    metric_card(name, val_str, pct, raw, style)
-
-def render_metric_pair(df_long, id1, id2, date_from, date_to, fmt="{:.0f}", style="teal"):
-    s1 = get_series(df_long, id1, date_from, date_to)
-    s2 = get_series(df_long, id2, date_from, date_to)
-    n1 = get_name(df_long, id1)
-    n2 = get_name(df_long, id2)
-    v1, p1, r1 = last_val_delta(s1)
-    v2, p2, r2 = last_val_delta(s2)
-
-    def _dhtml(pct, raw):
-        if pct is None: return ""
-        arrow = "▲" if raw > 0 else ("▼" if raw < 0 else "→")
-        sign  = "+" if pct >= 0 else ""
-        col   = "#86EFAC" if raw > 0 else ("#FCA5A5" if raw < 0 else "#CBD5E1")
-        return f'<span style="font-size:12px;color:{col};font-weight:600;">{arrow} {sign}{pct:.1f}%</span>'
-
-    bg, fg = CARD_STYLES[style]
-    st.markdown(f"""
-    <div style="background:{bg};border-radius:14px;padding:14px 16px;
-                color:{fg};margin-bottom:10px;
-                box-shadow:0 4px 15px rgba(0,0,0,0.12);">
-      <div style="font-size:12px;opacity:.8;margin-bottom:8px;font-weight:500;">
-        {n1} / {n2}
-      </div>
-      <div style="display:flex;gap:12px;align-items:center;">
-        <div>
-          <span style="font-size:22px;font-weight:700;">{fmt.format(v1) if v1 else "—"}</span>
-          <span style="margin-left:4px;">{_dhtml(p1,r1)}</span>
-        </div>
-        <div style="opacity:.5;font-size:20px;">/</div>
-        <div>
-          <span style="font-size:22px;font-weight:700;">{fmt.format(v2) if v2 else "—"}</span>
-          <span style="margin-left:4px;">{_dhtml(p2,r2)}</span>
-        </div>
-      </div>
-    </div>""", unsafe_allow_html=True)
-
-def line_chart(df_long, metric_ids, colors, names, date_from, date_to,
-               height=200, pct_change=False, title=None):
-    fig = go.Figure()
-    for mid, color, name in zip(metric_ids, colors, names):
-        s = get_series(df_long, mid, date_from, date_to)
-        if s.empty: continue
-        if pct_change:
-            s = s.copy()
-            s["plot_val"] = s["value"].pct_change() * 100
-            s = s.dropna(subset=["plot_val"])
-            y_vals = s["plot_val"].round(2)
-            ysuffix = "%"
-        else:
-            y_vals  = s["value"]
-            ysuffix = ""
-        # используем реальные даты как категории
-        x_dates = s["date"].dt.strftime("%d.%m.%y").tolist()
-        # конвертируем hex в rgba для fillcolor
-        def _hex_to_rgba(h, a=0.1):
-            h = h.lstrip("#")
-            r,g,b = int(h[0:2],16), int(h[2:4],16), int(h[4:6],16)
-            return f"rgba({r},{g},{b},{a})"
-        fill_color = _hex_to_rgba(color) if color.startswith("#") else "rgba(100,100,200,0.1)"
-        fig.add_trace(go.Scatter(
-            x=x_dates, y=y_vals, name=name, mode="lines+markers",
-            line=dict(color=color, width=2),
-            marker=dict(size=5, color=color),
-            fill="tozeroy" if len(metric_ids) == 1 else None,
-            fillcolor=fill_color,
-            hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y:,.2f}<extra></extra>",
-        ))
-    layout = dict(
-        height=height,
-        margin=dict(t=8, b=50, l=42, r=8),
+def base_layout(h=210, right=8, dual_y=False):
+    """Базовый layout — без распаковки если есть doп-параметры."""
+    return dict(
+        height=h,
+        margin=dict(t=14, b=32, l=42, r=right),
         paper_bgcolor=BG, plot_bgcolor=BG,
-        font=dict(size=10, color="#888780"),
-        showlegend=len(metric_ids) > 1,
-        legend=dict(orientation="h", y=1.1, x=0, font=dict(size=10)),
-        xaxis=dict(type="category", gridcolor=GRID,
-                   tickfont=dict(size=9), tickangle=-35),
-        yaxis=dict(gridcolor=GRID, tickfont=dict(size=9), ticksuffix=ysuffix,
-                   zeroline=pct_change,
-                   zerolinecolor="rgba(128,128,128,0.3)"),
+        font=dict(size=10, color=GREY_TXT),
+        showlegend=False,
+        xaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
+        yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
     )
-    fig.update_layout(**layout)
-    return fig
-
-def bar_pct_chart(df_long, metric_ids, colors, names, date_from, date_to, height=200):
-    fig = go.Figure()
-    for mid, color, name in zip(metric_ids, colors, names):
-        s = get_series(df_long, mid, date_from, date_to)
-        if s.empty or len(s) < 2: continue
-        s = s.copy()
-        s["pct"] = s["value"].pct_change() * 100
-        s = s.dropna(subset=["pct"])
-        x_fmt = s["date"].dt.strftime("%d.%m")
-        fig.add_trace(go.Bar(
-            x=x_fmt, y=s["pct"].round(1), name=name,
-            marker_color=color, opacity=0.85,
-            text=s["pct"].round(1).astype(str) + "%",
-            textposition="outside", textfont=dict(size=8),
-        ))
-    fig.update_layout(
-        height=height,
-        margin=dict(t=8, b=30, l=42, r=8),
-        paper_bgcolor=BG, plot_bgcolor=BG,
-        font=dict(size=10, color="#888780"),
-        barmode="group",
-        showlegend=True,
-        legend=dict(orientation="h", y=1.12, x=0, font=dict(size=10)),
-        xaxis=dict(gridcolor=GRID, tickfont=dict(size=9), tickangle=-30),
-        yaxis=dict(gridcolor=GRID, tickfont=dict(size=9), ticksuffix="%",
-                   zeroline=True, zerolinecolor="rgba(128,128,128,0.3)"),
-    )
-    return fig
-
-def build_funnel_svg():
-    funnel_stages = ["Всего отклонений","Выявлено в системе","Передано на устранение","Устранено"]
-    funnel_vals   = [1600,1200,950,850]
-    funnel_parts  = {
-        "Всего отклонений":       [600,600,400],
-        "Выявлено в системе":     [460,440,300],
-        "Передано на устранение": [360,350,240],
-        "Устранено":              [320,310,220],
-    }
-    W,H = 520,460; label_w=185; bar_area=W-label_w-60
-    max_val=funnel_vals[0]; row_h,gap,top_m=68,14,16
-    out=[]
-    for i,stage in enumerate(funnel_stages):
-        total=funnel_vals[i]
-        top_frac=(funnel_vals[i-1]/max_val) if i>0 else 1.0
-        bot_frac=total/max_val
-        bw_top=bar_area*top_frac; bw_bot=bar_area*bot_frac
-        cx=label_w+bar_area/2; yt=top_m+i*(row_h+gap); yb=yt+row_h
-        xl_top=cx-bw_top/2; xl_bot=cx-bw_bot/2
-        parts=funnel_parts[stage]; total_p=sum(parts); ct,cb=xl_top,xl_bot
-        for j in range(3):
-            fj=parts[j]/total_p; swt=bw_top*fj; swb=bw_bot*fj
-            pts=(f"{ct:.1f},{yt} {ct+swt:.1f},{yt} {cb+swb:.1f},{yb} {cb:.1f},{yb}")
-            tx=ct+swt/2; ty=yt+row_h/2+5
-            out.append(f'<polygon points="{pts}" fill="{FUNNEL_COLORS_LIST[j]}" opacity="0.88" stroke="white" stroke-width="1.5"/>')
-            out.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" font-size="12" font-weight="600" fill="white">{parts[j]}</text>')
-            ct+=swt; cb+=swb
-        mid_y=yt+row_h/2+5
-        out.append(f'<text x="{label_w-10}" y="{mid_y:.1f}" text-anchor="end" font-size="12" fill="#444">{stage}</text>')
-        out.append(f'<text x="{cx+bw_bot/2+10}" y="{mid_y:.1f}" text-anchor="start" font-size="13" font-weight="700" fill="#222">{total}</text>')
-    lx,ly=label_w,H-28
-    for k,(lbl,clr) in enumerate(zip(FUNNEL_LABELS,FUNNEL_COLORS_LIST)):
-        out.append(f'<rect x="{lx+k*90}" y="{ly}" width="13" height="13" fill="{clr}" rx="3"/>')
-        out.append(f'<text x="{lx+k*90+17}" y="{ly+11}" font-size="12" fill="#444">{lbl}</text>')
-    return (f'<svg width="{W}" height="{H}" xmlns="http://www.w3.org/2000/svg" style="font-family:sans-serif;">{"".join(out)}</svg>')
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# ЗАГРУЗКА
-# ══════════════════════════════════════════════════════════════════════════
-try:
-    df_long = load_data()
-    data_ok = True
-    all_dates = sorted(df_long["date"].unique())
-    max_date  = pd.Timestamp(all_dates[-1])
-    min_date  = pd.Timestamp(all_dates[0])
-except Exception as e:
-    st.error(f"Не удалось загрузить metrics.xlsx: {e}")
-    data_ok = False
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# SUMMARY
+# СТРАНИЦА: САММАРИ
 # ══════════════════════════════════════════════════════════════════════════
 if p == "summary":
-    if not data_ok:
-        st.info("Разместите файл metrics.xlsx в корневой папке приложения.")
-        st.stop()
+    # ── даты ───────────────────────────────────────────────────────────
+    d1, d2, _ = st.columns([1.2, 1.2, 6])
+    with d1:
+        st.date_input("Период с", value=date(2026, 3, 20),
+                      format="DD.MM.YYYY", key="d_from")
+    with d2:
+        st.date_input("по", value=date(2026, 4, 10),
+                      format="DD.MM.YYYY", key="d_to")
 
-    # ── выбор периода ─────────────────────────────────────────────────────
-    default_from = (max_date - timedelta(weeks=3)).date()
-    if default_from < min_date.date():
-        default_from = min_date.date()
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
-    fc, tc, _ = st.columns([1.3, 1.3, 6])
-    with fc:
-        date_from = st.date_input("Период с", value=default_from,
-                                  min_value=min_date.date(), max_value=max_date.date(),
-                                  format="DD.MM.YYYY", key="d_from")
-    with tc:
-        date_to = st.date_input("по", value=max_date.date(),
-                                min_value=min_date.date(), max_value=max_date.date(),
-                                format="DD.MM.YYYY", key="d_to")
+    weeks  = ["20.03", "27.03", "03.04", "10.04"]
+    months = ["янв 26", "фев 26", "мар 26", "апр 26"]
 
-    # период 3 месяца назад от конца для графиков
-    date_3m = (max_date - pd.DateOffset(months=3)).date()
-
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-    n4  = get_name(df_long, "metric_smr_4")
-    n5  = get_name(df_long, "metric_smr_5")
-    n36 = get_name(df_long, "metric_smr_36")
-    n37 = get_name(df_long, "metric_smr_37")
-    n38 = get_name(df_long, "metric_smr_38")
-    n39 = get_name(df_long, "metric_smr_39")
-
-    def grouped_bar(metric_ids, colors, names, d_from, d_to, height=220):
-        fig = go.Figure()
-        for mid, color, name in zip(metric_ids, colors, names):
-            s = get_series(df_long, mid, d_from, d_to)
-            if s.empty: continue
-            # используем строки дат как категории, чтобы Plotly не путал с числами
-            x_labels = s["date"].dt.strftime("%d.%m.%y").tolist()
-            fig.add_trace(go.Bar(
-                x=x_labels, y=s["value"], name=name,
-                marker_color=color, opacity=0.9,
-                hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y:,.0f}<extra></extra>",
-            ))
-        fig.update_layout(
-            height=height, margin=dict(t=8,b=50,l=42,r=8),
-            paper_bgcolor=BG, plot_bgcolor=BG,
-            font=dict(size=10,color="#888780"),
-            barmode="group",
-            bargap=0.2,       # зазор между группами
-            bargroupgap=0.05, # зазор внутри группы
-            showlegend=True,
-            legend=dict(orientation="h",y=1.14,x=0,font=dict(size=9)),
-            xaxis=dict(
-                type="category",  # строго категориальная ось
-                gridcolor=GRID, tickfont=dict(size=9), tickangle=-35,
-                tickmode="array",
-                tickvals=list(range(len(s["date"]))),
-            ),
-            yaxis=dict(gridcolor=GRID,tickfont=dict(size=9)),
-        )
-        return fig
-
-    def bar_with_trend(metric_ids, bar_colors, line_colors, names, d_from, d_to, height=240):
-        fig = go.Figure()
-        for mid, bc, lc, name in zip(metric_ids, bar_colors, line_colors, names):
-            s = get_series(df_long, mid, d_from, d_to)
-            if s.empty: continue
-            x_fmt = s["date"].dt.strftime("%d.%m")
-            fig.add_trace(go.Bar(x=x_fmt, y=s["value"], name=name,
-                                 marker_color=bc, opacity=0.55, yaxis="y1"))
-            s2 = s.copy()
-            s2["pct"] = s2["value"].pct_change() * 100
-            s2 = s2.dropna(subset=["pct"])
-            if not s2.empty:
-                x2 = s2["date"].dt.strftime("%d.%m")
-                fig.add_trace(go.Scatter(
-                    x=x2, y=s2["pct"].round(1), name=f"{name} %",
-                    mode="lines+markers",
-                    line=dict(color=lc, width=2, dash="dot"),
-                    marker=dict(size=4), yaxis="y2"))
-        fig.update_layout(
-            height=height, margin=dict(t=10,b=30,l=42,r=42),
-            paper_bgcolor=BG, plot_bgcolor=BG,
-            font=dict(size=10,color="#888780"), barmode="group",
-            showlegend=True,
-            legend=dict(orientation="h",y=1.14,x=0,font=dict(size=9)),
-            xaxis=dict(gridcolor=GRID,tickfont=dict(size=9),tickangle=-30),
-            yaxis=dict(gridcolor=GRID,tickfont=dict(size=9)),
-            yaxis2=dict(overlaying="y",side="right",gridcolor="rgba(0,0,0,0)",
-                        tickfont=dict(size=9),ticksuffix="%",zeroline=True,
-                        zerolinecolor="rgba(128,128,128,0.3)"),
-        )
-        return fig
-
-    # Q1 верх-лево: метрики 1,3 | bar+trend 4,5
+    # ════ Q1 + Q2 ════
     q1, q2 = st.columns([1, 1], gap="large")
+
+    # Q1: метрики слева | график справа
     with q1:
-        mc1, gc1 = st.columns([1, 1.8], gap="small")
-        with mc1:
-            render_metric(df_long, "metric_smr_1", date_from, date_to, fmt="{:.0f}", style="blue")
-            render_metric(df_long, "metric_smr_3", date_from, date_to, fmt="{:.0f}", style="indigo")
-        with gc1:
-            chart_title(f"{n4} / {n5}", size=11)
-            fig45 = grouped_bar(
-                metric_ids=["metric_smr_4","metric_smr_5"],
-                colors=[BAR_B, BAR_T],
-                names=[n4, n5],
-                d_from=date_3m, d_to=max_date.date(), height=240)
-            st.plotly_chart(fig45, use_container_width=True)
+        m, g = st.columns([1, 2.2], gap="small")
+        with m:
+            metric_card("Кол-во видов отклонений", "16", "+6.7%", "up", "dark-green")
+            metric_card("Кол-во ВСП с отклонениями", "850", "+3.2%", "up", "green")
+        with g:
+            chart_title("Пораженность / Счётчик повторов")
+            f1 = go.Figure()
+            f1.add_trace(go.Bar(name="Пораженность", x=weeks, y=[120, 135, 128, 142],
+                                marker_color=GREEN, opacity=0.9,
+                                hovertemplate="<b>%{x}</b><br>Пораженность: %{y}<extra></extra>"))
+            f1.add_trace(go.Bar(name="Счётчик повторов", x=weeks, y=[5.4, 5.8, 5.6, 5.6],
+                                marker_color=YELLOW, opacity=0.9,
+                                hovertemplate="<b>%{x}</b><br>Счётчик: %{y}<extra></extra>"))
+            lay1 = base_layout(h=220)
+            lay1.update(
+                barmode="group",
+                bargap=0.25, bargroupgap=0.08,
+                showlegend=True,
+                legend=dict(orientation="h", y=1.12, x=0, font=dict(size=10)),
+                xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
+            )
+            f1.update_layout(**lay1)
+            st.plotly_chart(f1, use_container_width=True, config={"displayModeBar": False})
 
-    # Q2 верх-право: линия тренда отклонений | метрика 36
+    # Q2: график слева | метрика справа
     with q2:
-        gc2, mc2 = st.columns([1.8, 1], gap="small")
-        with gc2:
-            chart_title(get_name(df_long,"metric_smr_1") + " (3 мес.)", size=11)
-            fig36g = line_chart(df_long, ["metric_smr_1"], [BAR_B],
-                                [get_name(df_long,"metric_smr_1")],
-                                date_3m, max_date.date(), height=130)
-            st.plotly_chart(fig36g, use_container_width=True)
-        with mc2:
-            render_metric(df_long, "metric_smr_36", date_from, date_to, fmt="{:.1f}", style="teal")
+        g, m = st.columns([2.2, 1], gap="small")
+        with g:
+            chart_title("Динамика видов отклонений (3 мес.)")
+            f2 = go.Figure(go.Scatter(
+                x=months, y=[14, 15, 16, 16], mode="lines+markers",
+                line=dict(color=GREEN, width=2.5),
+                marker=dict(size=6, color=GREEN),
+                fill="tozeroy", fillcolor="rgba(42,126,46,0.14)",
+                hovertemplate="<b>%{x}</b><br>Виды: %{y}<extra></extra>",
+            ))
+            lay2 = base_layout(h=220)
+            lay2["xaxis"] = dict(type="category", gridcolor=GRID, tickfont=dict(size=10))
+            f2.update_layout(**lay2)
+            st.plotly_chart(f2, use_container_width=True, config={"displayModeBar": False})
+        with m:
+            metric_card("Доля устранённых отклонений", "50.1%", "+0.2%", "up", "orange")
 
-    st.markdown("<hr style='margin:8px 0;border:none;border-top:1px solid #eee;'>",
+    st.markdown("<hr style='margin:8px 0 12px;border:none;border-top:1px solid #E0E0DA;'>",
                 unsafe_allow_html=True)
 
-    # Q3 низ-лево: метрики 2, 38/39 | grouped bar 38+39
+    # ════ Q3 + Q4 ════
     q3, q4 = st.columns([1, 1], gap="large")
+
+    # Q3: метрики слева | график справа
     with q3:
-        mc3, gc3 = st.columns([1, 1.8], gap="small")
-        with mc3:
-            render_metric(df_long, "metric_smr_2", date_from, date_to, fmt="{:.0f}", style="slate")
-            render_metric_pair(df_long, "metric_smr_38", "metric_smr_39",
-                               date_from, date_to, fmt="{:.0f}", style="teal")
-        with gc3:
-            chart_title(f"{n38} / {n39}", size=11)
-            fig3839 = grouped_bar(
-                metric_ids=["metric_smr_38","metric_smr_39"],
-                colors=[LINE_C, LINE_P], names=[n38, n39],
-                d_from=date_3m, d_to=max_date.date(), height=240)
-            st.plotly_chart(fig3839, use_container_width=True)
+        m, g = st.columns([1, 2.2], gap="small")
+        with m:
+            metric_card("Кол-во человек с отклонениями", "1 000", "-2.1%", "down", "black")
+            metric_pair("Задачи / Хроники", "1 600", "+4%", "1 525", "+2%", "yellow")
+        with g:
+            chart_title("Задачи / Хроники по неделям")
+            f3 = go.Figure()
+            f3.add_trace(go.Bar(name="Задачи", x=weeks, y=[1450, 1520, 1580, 1600],
+                                marker_color=DARK_GREEN, opacity=0.9,
+                                hovertemplate="<b>%{x}</b><br>Задачи: %{y:,}<extra></extra>"))
+            f3.add_trace(go.Bar(name="Хроники", x=weeks, y=[1400, 1465, 1500, 1525],
+                                marker_color=LIME, opacity=0.9,
+                                hovertemplate="<b>%{x}</b><br>Хроники: %{y:,}<extra></extra>"))
+            lay3 = base_layout(h=220)
+            lay3.update(
+                barmode="group",
+                bargap=0.25, bargroupgap=0.08,
+                showlegend=True,
+                legend=dict(orientation="h", y=1.12, x=0, font=dict(size=10)),
+                xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
+            )
+            f3.update_layout(**lay3)
+            st.plotly_chart(f3, use_container_width=True, config={"displayModeBar": False})
 
-    # Q4 низ-право: линия тренда скорости | метрика 37
+    # Q4: график слева | метрика справа
     with q4:
-        gc4, mc4 = st.columns([1.8, 1], gap="small")
-        with gc4:
-            chart_title(n37 + " (3 мес.)", size=11)
-            fig37g = line_chart(df_long, ["metric_smr_37"], [PURPLE],
-                                [n37], date_3m, max_date.date(), height=130)
-            st.plotly_chart(fig37g, use_container_width=True)
-        with mc4:
-            render_metric(df_long, "metric_smr_37", date_from, date_to, fmt="{:.1f}", style="purple")
+        g, m = st.columns([2.2, 1], gap="small")
+        with g:
+            chart_title("Скорость устранения (3 мес.)")
+            f4 = go.Figure(go.Scatter(
+                x=months, y=[5.8, 5.7, 5.7, 5.6], mode="lines+markers",
+                line=dict(color=ORANGE, width=2.5),
+                marker=dict(size=6, color=ORANGE),
+                fill="tozeroy", fillcolor="rgba(224,123,27,0.14)",
+                hovertemplate="<b>%{x}</b><br>Скорость: %{y}<extra></extra>",
+            ))
+            lay4 = base_layout(h=220)
+            lay4["xaxis"] = dict(type="category", gridcolor=GRID, tickfont=dict(size=10))
+            f4.update_layout(**lay4)
+            st.plotly_chart(f4, use_container_width=True, config={"displayModeBar": False})
+        with m:
+            metric_card("Скорость устранения", "5.6 нед.", "-0.2", "down", "lime")
 
-    st.caption(f"Данные: metrics.xlsx · последнее обновление {max_date.strftime('%d.%m.%Y')}")
+    st.caption("Данные: Metrics.xlsx · обновлено 10.04.2026")
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# БМО
+# СТРАНИЦА: БМО
 # ══════════════════════════════════════════════════════════════════════════
 else:
-    if data_ok:
-        default_from_b = (max_date - timedelta(weeks=3)).date()
-        fc2, tc2, _ = st.columns([1.3, 1.3, 6])
-        with fc2:
-            date_from_b = st.date_input("Период с", value=default_from_b,
-                                        min_value=min_date.date(), max_value=max_date.date(),
-                                        format="DD.MM.YYYY", key="bmo_from")
-        with tc2:
-            date_to_b = st.date_input("по", value=max_date.date(),
-                                      min_value=min_date.date(), max_value=max_date.date(),
-                                      format="DD.MM.YYYY", key="bmo_to")
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    d1, d2, _ = st.columns([1.2, 1.2, 6])
+    with d1:
+        st.date_input("Период с", value=date(2026, 3, 20),
+                      format="DD.MM.YYYY", key="bd_from")
+    with d2:
+        st.date_input("по", value=date(2026, 4, 10),
+                      format="DD.MM.YYYY", key="bd_to")
 
-    mc = st.columns(6)
-    lv_bmo = [("Доля по Банку","50,1%","+0,2%"),("Целевое значение","—",None),
-              ("Счётчик повторов","5,6 нед.","-0,2"),("Задач / хроник","—",None),
-              ("Доля устранённых","—",None),("Скорость устранения","—",None)]
-    for col,(lbl,val,delta) in zip(mc,lv_bmo):
-        with col: st.metric(lbl,val,delta)
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
-    st.divider()
+    # ── 6 метрик-карточек в одну строку ────────────────────────────────
+    def bmo_card(label, value, delta, delta_dir, accent):
+        col = GREEN if delta_dir == "up" else ORANGE
+        arrow = "▲" if delta_dir == "up" else "▼"
+        return f"""
+        <div style="background:#fff;border:0.5px solid #E0E0DA;border-radius:10px;
+                    padding:9px 11px;border-left:3px solid {accent};min-height:78px;">
+          <div style="font-size:10px;color:{GREY_TXT};line-height:1.2;margin-bottom:4px;">{label}</div>
+          <div style="font-size:18px;font-weight:600;color:{BLACK};">{value}</div>
+          <div style="font-size:10px;font-weight:600;color:{col};margin-top:2px;">
+            {arrow} {delta}</div>
+        </div>"""
 
-    graphs_col, funnel_col = st.columns([11,9], gap="large")
-    bmo_weeks  = ["нед 1","нед 2","нед 3","нед 4","нед 5","нед 6","нед 7","нед 8"]
-    bmo_vsp    = [9700,9800,10100,10300,10500,10200,10400,10500]
-    bmo_tasks  = [1300,1350,1400,1420,1450,1430,1460,1525]
-    bmo_share  = [22,26,24,22,25,23,26,24]
-    bmo_speed2 = [18,20,17,19,21,18,20,19]
+    cards = [
+        ("Доля по Банку", "50.1%", "+0.2%", "up", GREEN),
+        ("Целевое значение", "52%", "цель", "up", "#5F5E5A"),
+        ("Счётчик повторов", "5.6 нед.", "-0.2", "down", ORANGE),
+        ("Задачи / хроники", "1 600", "+4%", "up", YELLOW),
+        ("Доля устранённых", "53%", "+1.1%", "up", LIME),
+        ("Скорость устранения", "82%", "-2%", "down", DARK_GREEN),
+    ]
+    cols = st.columns(6)
+    for c, (lbl, v, d, dr, ac) in zip(cols, cards):
+        with c:
+            st.markdown(bmo_card(lbl, v, d, dr, ac), unsafe_allow_html=True)
 
-    with graphs_col:
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+    # ── основная секция: [2 графика] | [воронка] ───────────────────────
+    bmo_weeks = ["нед 1","нед 2","нед 3","нед 4","нед 5","нед 6","нед 7","нед 8"]
+
+    g_col, f_col = st.columns([1.4, 1], gap="large")
+
+    with g_col:
+        # ── График 1: ВСП + Задачи (двойная ось) ──
         chart_title("Динамика ВСП и задач по неделям")
         f5 = go.Figure()
-        f5.add_trace(go.Bar(name="ВСП", x=bmo_weeks, y=bmo_vsp,
-                            marker_color=BAR_B, opacity=.8, yaxis="y1"))
-        f5.add_trace(go.Scatter(name="Задачи", x=bmo_weeks, y=bmo_tasks,
-                                mode="lines+markers",
-                                line=dict(color=LINE_C,width=2),
-                                marker=dict(size=5), yaxis="y2"))
+        f5.add_trace(go.Bar(
+            name="ВСП", x=bmo_weeks,
+            y=[9700, 9800, 10100, 10300, 10500, 10200, 10400, 10500],
+            marker_color=GREEN, opacity=0.85, yaxis="y1",
+            hovertemplate="<b>%{x}</b><br>ВСП: %{y:,}<extra></extra>",
+        ))
+        f5.add_trace(go.Scatter(
+            name="Задачи", x=bmo_weeks,
+            y=[1300, 1350, 1400, 1420, 1450, 1430, 1460, 1525],
+            mode="lines+markers",
+            line=dict(color=ORANGE, width=2.5),
+            marker=dict(size=5, color=ORANGE), yaxis="y2",
+            hovertemplate="<b>%{x}</b><br>Задачи: %{y:,}<extra></extra>",
+        ))
         f5.update_layout(
-            height=230, margin=dict(t=10,b=32,l=42,r=50),
+            height=210,
+            margin=dict(t=10, b=30, l=42, r=46),
             paper_bgcolor=BG, plot_bgcolor=BG,
-            font=dict(size=11,color="#888780"), showlegend=True,
-            legend=dict(orientation="h",y=1.12,x=0,font=dict(size=10)),
-            xaxis=dict(gridcolor=GRID,tickfont=dict(size=10)),
-            yaxis=dict(gridcolor=GRID,tickfont=dict(size=10),title=dict(text="ВСП",font=dict(size=10))),
-            yaxis2=dict(overlaying="y",side="right",gridcolor="rgba(0,0,0,0)",
-                        tickfont=dict(size=10),title=dict(text="Задачи",font=dict(size=10))),
+            font=dict(size=10, color=GREY_TXT),
+            barmode="group", bargap=0.3,
+            showlegend=True,
+            legend=dict(orientation="h", y=1.14, x=0, font=dict(size=10)),
+            xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
+            yaxis=dict(gridcolor=GRID, tickfont=dict(size=10),
+                       title=dict(text="ВСП", font=dict(size=10, color=GREY_TXT))),
+            yaxis2=dict(overlaying="y", side="right",
+                        gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10),
+                        title=dict(text="Задачи", font=dict(size=10, color=GREY_TXT))),
         )
-        st.plotly_chart(f5, use_container_width=True)
+        st.plotly_chart(f5, use_container_width=True, config={"displayModeBar": False})
 
+        # ── График 2: Доля + Скорость ──
         chart_title("Доля и скорость устранения")
         f6 = go.Figure()
-        f6.add_trace(go.Bar(name="Доля (%)", x=bmo_weeks, y=bmo_share,
-                            marker_color=LINE_P, opacity=.85))
-        f6.add_trace(go.Scatter(name="Скорость", x=bmo_weeks, y=bmo_speed2,
-                                mode="lines+markers",
-                                line=dict(color=LINE_A,width=2), marker=dict(size=5)))
+        f6.add_trace(go.Bar(
+            name="Доля (%)", x=bmo_weeks, y=[22, 26, 24, 22, 25, 23, 26, 24],
+            marker_color=LIME, opacity=0.9,
+            hovertemplate="<b>%{x}</b><br>Доля: %{y}%<extra></extra>",
+        ))
+        f6.add_trace(go.Scatter(
+            name="Скорость", x=bmo_weeks, y=[18, 20, 17, 19, 21, 18, 20, 19],
+            mode="lines+markers",
+            line=dict(color=YELLOW, width=2.5),
+            marker=dict(size=5, color=YELLOW),
+            hovertemplate="<b>%{x}</b><br>Скорость: %{y}<extra></extra>",
+        ))
         f6.update_layout(
-            height=230, margin=dict(t=10,b=32,l=42,r=8),
+            height=210,
+            margin=dict(t=10, b=30, l=42, r=8),
             paper_bgcolor=BG, plot_bgcolor=BG,
-            font=dict(size=11,color="#888780"), showlegend=True,
-            legend=dict(orientation="h",y=1.12,x=0,font=dict(size=10)),
+            font=dict(size=10, color=GREY_TXT),
             barmode="overlay",
-            xaxis=dict(gridcolor=GRID,tickfont=dict(size=10)),
-            yaxis=dict(gridcolor=GRID,tickfont=dict(size=10)),
+            showlegend=True,
+            legend=dict(orientation="h", y=1.14, x=0, font=dict(size=10)),
+            xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
+            yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
         )
-        st.plotly_chart(f6, use_container_width=True)
+        st.plotly_chart(f6, use_container_width=True, config={"displayModeBar": False})
 
-    with funnel_col:
+    # ── воронка (SVG, трапеции) ──
+    with f_col:
         chart_title("Воронка метрик БА по БМО")
-        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-        st.markdown(build_funnel_svg(), unsafe_allow_html=True)
+        stages = ["Всего", "Выявлено", "Передано", "Устранено"]
+        totals = [1600, 1200, 950, 850]
+        parts = {
+            "Всего":     [600, 600, 400],
+            "Выявлено":  [460, 440, 300],
+            "Передано":  [360, 350, 240],
+            "Устранено": [320, 310, 220],
+        }
+        COLORS = [GREEN, LIME, YELLOW]
+        TEXT_COLORS = ["#fff", BLACK, BLACK]
+        W, H = 480, 460
+        label_w = 80
+        bar_area = W - label_w - 70
+        max_val = totals[0]
+        row_h, gap, top_m = 70, 14, 18
 
-    st.caption("* Заменяем термин «Срок жизни». Методологию расчёта разработали. За 4 недели.")
+        out = []
+        for i, stage in enumerate(stages):
+            total = totals[i]
+            top_frac = (totals[i-1] / max_val) if i > 0 else 1.0
+            bot_frac = total / max_val
+            bw_top = bar_area * top_frac
+            bw_bot = bar_area * bot_frac
+            cx = label_w + bar_area / 2
+            yt = top_m + i * (row_h + gap)
+            yb = yt + row_h
+            xl_top = cx - bw_top / 2
+            xl_bot = cx - bw_bot / 2
+            parts_i = parts[stage]
+            total_p = sum(parts_i)
+            ct, cb = xl_top, xl_bot
+            for j in range(3):
+                fj = parts_i[j] / total_p
+                swt = bw_top * fj
+                swb = bw_bot * fj
+                pts = (f"{ct:.1f},{yt} {ct+swt:.1f},{yt} "
+                       f"{cb+swb:.1f},{yb} {cb:.1f},{yb}")
+                tx = ct + swt / 2
+                ty = yt + row_h / 2 + 5
+                out.append(f'<polygon points="{pts}" fill="{COLORS[j]}" '
+                           f'stroke="white" stroke-width="1.5"/>')
+                out.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" '
+                           f'font-size="12" font-weight="600" fill="{TEXT_COLORS[j]}">{parts_i[j]}</text>')
+                ct += swt
+                cb += swb
+            mid_y = yt + row_h / 2 + 5
+            out.append(f'<text x="{label_w-8}" y="{mid_y:.1f}" text-anchor="end" '
+                       f'font-size="11" fill="#444441">{stage}</text>')
+            out.append(f'<text x="{cx+bw_bot/2+8}" y="{mid_y:.1f}" text-anchor="start" '
+                       f'font-size="13" font-weight="700" fill="{BLACK}">{total}</text>')
+
+        # легенда
+        ly = H - 30
+        for k, (lbl, clr) in enumerate(zip(["Тип А", "Тип Б", "Тип В"], COLORS)):
+            out.append(f'<rect x="{label_w+k*80}" y="{ly}" width="13" height="13" '
+                       f'fill="{clr}" rx="2"/>')
+            out.append(f'<text x="{label_w+k*80+18}" y="{ly+11}" font-size="11" '
+                       f'fill="#444441">{lbl}</text>')
+
+        svg = (f'<svg viewBox="0 0 {W} {H}" width="100%" '
+               f'style="font-family:sans-serif;">{"".join(out)}</svg>')
+        st.markdown(svg, unsafe_allow_html=True)
+
+    st.caption("* Данные: Metrics.xlsx · обновлено 10.04.2026")
