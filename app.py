@@ -637,10 +637,10 @@ if p == "summary":
     with q1:
         m, g = st.columns([1, 2.2], gap="small")
         with m:
-            metric_card(get_metric_name(df, "metric_smr_4") + " (неделя)",
+            metric_card(get_metric_name(df, "metric_smr_4") + "",
                         fmt_num(v_4, "", 2),
                         delta=fmt_delta(p_4), delta_dir=d_4 or "up", style="lime")
-            metric_card(get_metric_name(df, "metric_smr_5") + " (неделя)",
+            metric_card(get_metric_name(df, "metric_smr_5") + "",
                         fmt_num(v_5, "", 2),
                         delta=fmt_delta(p_5), delta_dir=d_5 or "up", style="yellow")
         with g:
@@ -709,10 +709,10 @@ if p == "summary":
                 )
                 st.plotly_chart(f_t, use_container_width=True, config={"displayModeBar": False})
         with m:
-            metric_card("Кол-во родит.задач (неделя)",
+            metric_card("Кол-во родитительских задач",
                         fmt_num(v_38),
                         delta=fmt_delta(p_38), delta_dir=d_38 or "up", style="dark-green")
-            metric_card("Кол-во эскалированных (неделя)",
+            metric_card("Кол-во эскалированных задач",
                         fmt_num(v_39),
                         delta=fmt_delta(p_39), delta_dir=d_39 or "up", style="lime")
 
@@ -725,11 +725,11 @@ if p == "summary":
     with q3:
         m, g = st.columns([1, 2.2], gap="small")
         with m:
-            metric_card("Количество активных видов отклонений (неделя)",
+            metric_card("Количество активных видов отклонений",
                         fmt_num(v_1),
                         delta=delta_1_str, delta_dir=dir_1, style="dark-green",
                         right_text=right_1)
-            metric_card(get_metric_name(df, "metric_smr_11") + " (неделя)",
+            metric_card(get_metric_name(df, "metric_smr_11") + "",
                         fmt_num(v_11),
                         delta=fmt_delta(p_11), delta_dir=d_11 or "up", style="yellow")
         with g:
@@ -813,11 +813,11 @@ if p == "summary":
                 )
                 st.plotly_chart(f_pv, use_container_width=True, config={"displayModeBar": False})
         with m:
-            metric_card("Количество сотрудников с отклонениями (неделя)",
+            metric_card("Количество сотрудников с отклонениями",
                         fmt_num(v_3),
                         delta=fmt_delta(p_3), delta_dir=d_3 or "up", style="green",
                         right_text=right_3)
-            metric_card("Кол-во ВСП с отклонениями (неделя)",
+            metric_card("Кол-во ВСП с отклонениями",
                         fmt_num(v_2),
                         delta=fmt_delta(p_2), delta_dir=d_2 or "up", style="orange",
                         right_text=right_2)
@@ -890,7 +890,7 @@ else:
     cards = [
         ("Доля по Банку",              fmt_num(v_46, "%", 1),                    fmt_delta(p_46), d_46 or "up", GREEN),
         ("Целевое значение",           fmt_num(v_45, "%", 1) if v_45 is not None else "—", "", "up", "#5F5E5A"),
-        ("Кол-во родит.задач / эскалированных", qty_pair,                       fmt_delta(p_40), d_40 or "up", YELLOW),
+        ("Кол-во родительских задач / эскалированных", qty_pair,                       fmt_delta(p_40), d_40 or "up", YELLOW),
         ("Пораженность",               fmt_num(v_10, "%", 1),                    fmt_delta(p_10), d_10 or "up", GREEN),
         ("Средний счётчик повторов",   fmt_num(v_7, "", 2),                      fmt_delta(p_7),  d_7 or "up",  ORANGE),
         ("Кол-во объектов: Сотрудников / ВСП", chel_vsp,                          "",              "up",         DARK_GREEN),
