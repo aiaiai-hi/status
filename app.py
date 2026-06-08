@@ -263,53 +263,40 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
     z-index: 1000;
 }}
 .info-badge:hover::after {{ opacity: 1; }}
-/* Plotly график сам белый */
-div[data-testid="stPlotlyChart"] {{
+/* 
+ * BUG-FIX для Streamlit (https://github.com/streamlit/streamlit/issues/10674):
+ * key="chartcardN" Streamlit ставит как класс на ВНУТРЕННИЙ div, а не на саму рамку.
+ * Поэтому нужно искать родителя через :has().
+ */
+/* Сам внутренний div с классом — прозрачный */
+div[class*="st-key-chartcard"] {{
+    background-color: transparent !important;
+}}
+/* Родитель — белая карточка с рамкой */
+div:has(> div[class*="st-key-chartcard"]) {{
     background-color: #ffffff !important;
-    border-radius: 8px !important;
+    border-radius: 12px !important;
+}}
+/* На случай если родитель сам — это stVerticalBlockBorderWrapper */
+[data-testid="stVerticalBlockBorderWrapper"]:has(div[class*="st-key-chartcard"]) {{
+    background-color: #ffffff !important;
+    border-radius: 12px !important;
 }}
 </style>
 """, unsafe_allow_html=True)
 
-# ── JS-инжектор через iframe для надёжного применения стиля ───────────────
+# ── JS-фолбэк: красим родителя элемента с st-key-chartcard в белый ─────────
 components.html("""
 <script>
 const parentDoc = window.parent.document;
 function paintCards() {
-  parentDoc.querySelectorAll('[data-testid="stPlotlyChart"]').forEach(plot => {
-    plot.style.backgroundColor = '#ffffff';
-    plot.style.borderRadius = '8px';
-
-    // Идём вверх до border-wrapper и собираем все промежуточные элементы
-    const chain = [];
-    let p = plot.parentElement;
-    let wrapper = null;
-    for (let i = 0; i < 12 && p; i++) {
-      chain.push(p);
-      if (p.getAttribute && p.getAttribute('data-testid') === 'stVerticalBlockBorderWrapper') {
-        wrapper = p;
-        break;
-      }
-      p = p.parentElement;
-    }
-
-    if (wrapper) {
-      wrapper.style.backgroundColor = '#ffffff';
-      wrapper.style.borderRadius = '12px';
-      wrapper.style.overflow = 'hidden';
-      // Все промежуточные div'ы внутри обёртки тоже красим в белый
-      chain.forEach(el => {
-        if (el !== wrapper) {
-          el.style.backgroundColor = '#ffffff';
-        }
-      });
-      // Также красим все потомки wrapper'а в белый (на всякий случай)
-      wrapper.querySelectorAll('div').forEach(d => {
-        // Не трогаем сам Plotly с его скруглением
-        if (d.getAttribute('data-testid') !== 'stPlotlyChart') {
-          d.style.backgroundColor = '#ffffff';
-        }
-      });
+  parentDoc.querySelectorAll('[class*="st-key-chartcard"]').forEach(el => {
+    // Сам элемент с классом — прозрачный
+    el.style.backgroundColor = 'transparent';
+    // А родитель (это и есть рамка) — белый
+    if (el.parentElement) {
+      el.parentElement.style.backgroundColor = '#ffffff';
+      el.parentElement.style.borderRadius = '12px';
     }
   });
 }
