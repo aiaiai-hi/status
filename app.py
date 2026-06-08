@@ -31,14 +31,33 @@ CARD_STYLES = {
 # ══════════════════════════════════════════════════════════════════════════
 # ЗАГРУЗКА ДАННЫХ
 # ══════════════════════════════════════════════════════════════════════════
+import json
+import os
+import subprocess
+
 @st.cache_data
 def load_data():
-    df = pd.read_excel("metrics.xlsx", sheet_name="Выгрузка")
+    """Читает данные из metrics.json. Если его нет — пытается сконвертировать из xlsx."""
+    if not os.path.exists("metrics.json"):
+        if os.path.exists("metrics.xlsx") and os.path.exists("convert_data.py"):
+            try:
+                subprocess.run(["python", "convert_data.py"], check=True, timeout=30)
+            except Exception as e:
+                raise FileNotFoundError(
+                    f"Нет metrics.json и не получилось сконвертировать из xlsx: {e}"
+                )
+        else:
+            raise FileNotFoundError(
+                "Нет файла metrics.json. Запустите: python convert_data.py"
+            )
+
+    with open("metrics.json", "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    df = pd.DataFrame(data["records"])
     df["date_end"] = pd.to_datetime(df["date_end"])
-    df = df[["date_end", "value_s", "metric_id", "metric_name"]].copy()
-    df = df.dropna(subset=["date_end", "value_s", "metric_id"])
     df["value_s"] = pd.to_numeric(df["value_s"], errors="coerce")
-    df = df.dropna(subset=["value_s"])
+    df = df.dropna(subset=["date_end", "value_s", "metric_id"])
     return df
 
 def get_period_value(df, metric_id, date_from, date_to, agg="last"):
@@ -144,7 +163,7 @@ st.markdown(
 )
 
 # ── навигация ──────────────────────────────────────────────────────────────
-n1, n2, _ = st.columns([0.9, 1.9, 7])
+n1, n2, n3, _ = st.columns([0.9, 1.9, 1.3, 5.7])
 with n1:
     if st.button("Саммари", key="nav_s",
                  type="primary" if p == "summary" else "secondary",
@@ -155,6 +174,22 @@ with n2:
                  type="primary" if p == "bmo" else "secondary",
                  use_container_width=True):
         st.session_state.page = "bmo"; st.rerun()
+with n3:
+    if st.button("🔄 Обновить данные", key="nav_refresh",
+                 type="secondary", use_container_width=True):
+        # Перегенерируем JSON из xlsx (если xlsx есть) и сбрасываем кэш
+        try:
+            if os.path.exists("metrics.xlsx") and os.path.exists("convert_data.py"):
+                subprocess.run(["python", "convert_data.py"], check=True, timeout=30)
+                st.success("Данные обновлены из metrics.xlsx")
+            elif os.path.exists("metrics.json"):
+                st.info("metrics.xlsx не найден — перечитан существующий metrics.json")
+            else:
+                st.error("Нет ни metrics.xlsx, ни metrics.json в папке приложения")
+        except Exception as e:
+            st.error(f"Ошибка обновления: {e}")
+        st.cache_data.clear()
+        st.rerun()
 
 st.markdown("<hr style='margin:10px 0 14px;border:none;border-top:1px solid #E0E0DA;'>",
             unsafe_allow_html=True)
