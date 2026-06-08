@@ -262,11 +262,25 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
     z-index: 1000;
 }}
 .info-badge:hover::after {{ opacity: 1; }}
-/* Контейнеры graph-card с белым фоном */
-div[data-testid="stVerticalBlockBorderWrapper"] {{
-    background: #fff !important;
-    border: 0.5px solid #E0E0DA !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+/* Любой container/wrapper, содержащий Plotly-график — белый фон, рамка, скругление */
+div[data-testid="stVerticalBlock"]:has(> div [data-testid="stPlotlyChart"]) {{
+    background: transparent;
+}}
+div[data-testid="stVerticalBlockBorderWrapper"]:has([data-testid="stPlotlyChart"]) {{
+    background: #ffffff !important;
+    border-radius: 12px !important;
+}}
+/* Альтернатива: новые версии Streamlit используют другой класс. 
+   Сделаем .chart-box обертку через div, и зальём именно её родителя. */
+.element-container:has(.stPlotlyChart),
+.element-container:has(div[data-testid="stPlotlyChart"]) {{
+    background: transparent !important;
+}}
+/* Сам Plotly-график — белый фон */
+div[data-testid="stPlotlyChart"] {{
+    background: #ffffff !important;
+    border-radius: 8px !important;
+    padding: 4px !important;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -377,7 +391,8 @@ def chart_title(t, tooltip=None):
 
 
 def chart_card():
-    """Возвращает контейнер с белым фоном и рамкой (нативный Streamlit)."""
+    """Container с явно белым фоном и рамкой."""
+    # st.container с border + дополнительный CSS поверх (на случай прозрачности)
     return st.container(border=True)
 
 # ── доп. хелперы для новых требований ─────────────────────────────────────
@@ -599,13 +614,12 @@ if p == "summary":
     with q1:
         m, g = st.columns([1, 2.2], gap="small")
         with m:
-            metric_card("Количество видов отклонений (неделя)",
-                        fmt_num(v_1),
-                        delta=delta_1_str, delta_dir=dir_1, style="dark-green",
-                        right_text=right_1)
-            metric_card(get_metric_name(df, "metric_smr_11") + " (неделя)",
-                        fmt_num(v_11),
-                        delta=fmt_delta(p_11), delta_dir=d_11 or "up", style="yellow")
+            metric_card(get_metric_name(df, "metric_smr_4") + " (неделя)",
+                        fmt_num(v_4, "", 2),
+                        delta=fmt_delta(p_4), delta_dir=d_4 or "up", style="lime")
+            metric_card(get_metric_name(df, "metric_smr_5") + " (неделя)",
+                        fmt_num(v_5, "", 2),
+                        delta=fmt_delta(p_5), delta_dir=d_5 or "up", style="yellow")
         with g:
             with chart_card():
                 chart_title("Качество работы с отклонениями", tooltip="Динамика за 3 месяца")
