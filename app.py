@@ -185,6 +185,8 @@ p = st.session_state.page
 # ── глобальный CSS ─────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
+/* фон страницы — очень светлый зелёный */
+.stApp {{ background-color: #F6FAF4 !important; }}
 .block-container {{ padding-top: 1.5rem !important; max-width: 100% !important; }}
 button[data-testid="stBaseButton-primary"],
 button[data-testid="stBaseButton-secondary"] {{
@@ -221,6 +223,31 @@ div[data-testid="column"]:has(div.refresh-marker) button:hover {{
     border-color: {GREEN} !important;
     background-color: #F0F8E8 !important;
 }}
+/* белая "коробочка" для графика */
+.chart-card-wrap {{
+    background: #fff;
+    border-radius: 12px;
+    padding: 12px 14px 8px;
+    border: 0.5px solid #E0E0DA;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    margin-bottom: 8px;
+}}
+/* круглый бейдж ⓘ с подсказкой */
+.info-badge {{
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    width: 16px; height: 16px;
+    border: 1px solid #C8C8C4;
+    border-radius: 50%;
+    font-size: 11px; color: {GREY_TXT};
+    cursor: help;
+    margin-left: 8px;
+    line-height: 1;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-style: normal; font-weight: 500;
+    vertical-align: middle;
+}}
+.info-badge:hover {{ border-color: {GREEN}; color: {GREEN}; }}
 </style>
 """, unsafe_allow_html=True)
 
