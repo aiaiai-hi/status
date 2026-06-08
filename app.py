@@ -453,6 +453,34 @@ def render_export_button(df_long, metric_ids, date_from, date_to, key, file_labe
     )
 
 
+def render_refresh_button(key):
+    """Серая кнопка «Обновить данные» — обновляет JSON из xlsx и сбрасывает кэш."""
+    st.markdown(
+        f"""<style>
+        div[data-testid="column"]:has(div.refresh-{key}-marker) button[kind] {{
+            background: #fff !important;
+            border: 1px solid #C8C8C4 !important;
+            color: #777 !important;
+            font-weight: 500 !important;
+        }}
+        div[data-testid="column"]:has(div.refresh-{key}-marker) button[kind]:hover {{
+            color: {GREEN} !important;
+            border-color: {GREEN} !important;
+            background: #F0F8E8 !important;
+        }}
+        </style><div class="refresh-{key}-marker"></div>""",
+        unsafe_allow_html=True,
+    )
+    if st.button("Обновить данные", key=key, use_container_width=True):
+        try:
+            if os.path.exists(XLSX_PATH):
+                _convert_xlsx_to_json()
+        except Exception as e:
+            st.error(f"Ошибка обновления: {e}")
+        st.cache_data.clear()
+        st.rerun()
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # СТРАНИЦА: САММАРИ
 # ══════════════════════════════════════════════════════════════════════════
@@ -503,16 +531,16 @@ if p == "summary":
     with q1:
         m, g = st.columns([1, 2.2], gap="small")
         with m:
-            metric_card("Количество видов отклонений",
+            metric_card("Количество видов отклонений (за период)",
                         fmt_num(v_1),
                         delta=delta_1_str, delta_dir=dir_1, style="dark-green",
                         right_text=right_1, delta_label="к пред. неделе")
-            metric_card("Количество сотрудников с отклонениями",
+            metric_card("Количество сотрудников с отклонениями (за период)",
                         fmt_num(v_3),
                         delta=fmt_delta(p_3), delta_dir=d_3 or "up", style="green",
                         right_text=right_3, delta_label="к пред. периоду")
         with g:
-            chart_title("Качество работы с отклонениями")
+            chart_title("Качество работы с отклонениями (динамика за 3 месяца)")
             df3m_from = (pd.Timestamp(eff_to) - pd.DateOffset(months=3)).date()
             s_4 = get_series(df, "metric_smr_4", df3m_from, eff_to)
             s_5 = get_series(df, "metric_smr_5", df3m_from, eff_to)
@@ -541,13 +569,18 @@ if p == "summary":
                 xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
                 yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
             )
-            st.plotly_chart(f1, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(f1, use_container_width=True, config={
+                "displayModeBar": True,
+                "displaylogo": False,
+                "modeBarButtonsToRemove": ["lasso2d","select2d","toggleSpikelines",
+                                            "hoverClosestCartesian","hoverCompareCartesian"],
+            })
 
     with q2:
         # Q2: график "Задачи" слева, плашки справа (Кол-во ВСП и Кол-во задач/Хроник)
         g, m = st.columns([2.2, 1], gap="small")
         with g:
-            chart_title("Задачи")
+            chart_title("Задачи (динамика за 3 месяца)")
             df3m_from = (pd.Timestamp(eff_to) - pd.DateOffset(months=3)).date()
             s_38 = get_series(df, "metric_smr_38", df3m_from, eff_to)
             s_39 = get_series(df, "metric_smr_39", df3m_from, eff_to)
@@ -576,20 +609,25 @@ if p == "summary":
                 xaxis=dict(type="category", gridcolor=GRID, tickfont=dict(size=10)),
                 yaxis=dict(gridcolor=GRID, tickfont=dict(size=10)),
             )
-            st.plotly_chart(f3, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(f3, use_container_width=True, config={
+                "displayModeBar": True,
+                "displaylogo": False,
+                "modeBarButtonsToRemove": ["lasso2d","select2d","toggleSpikelines",
+                                            "hoverClosestCartesian","hoverCompareCartesian"],
+            })
         with m:
-            metric_card("Кол-во ВСП с отклонениями",
+            metric_card("Кол-во ВСП с отклонениями (за период)",
                         fmt_num(v_2),
                         delta=fmt_delta(p_2), delta_dir=d_2 or "up", style="orange",
                         right_text=right_2, delta_label="к пред. периоду")
-            metric_pair("Кол-во родит.задач / экскалированных",
+            metric_pair("Кол-во родит.задач / экскалированных (за период)",
                         fmt_num(v_38), fmt_delta(p_38),
                         fmt_num(v_39), fmt_delta(p_39),
                         "yellow", d_38 or "up", d_39 or "up")
 
-    # ── кнопка скачивания ──────────────────────────────────────────────
+    # ── кнопки внизу страницы: Скачать слева, Обновить справа ──────────
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-    dl_col, _ = st.columns([1.5, 8.5])
+    dl_col, _spacer, rf_col = st.columns([1.5, 7, 1.5])
     with dl_col:
         render_export_button(
             df,
@@ -599,6 +637,8 @@ if p == "summary":
             eff_from, eff_to,
             key="dl_summary", file_label="Саммари"
         )
+    with rf_col:
+        render_refresh_button("refresh_summary")
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -634,11 +674,13 @@ else:
     def bmo_card(label, value, delta, delta_dir, accent):
         col = GREEN if delta_dir == "up" else ORANGE
         arrow = "▲" if delta_dir == "up" else "▼"
-        delta_html = f'<div style="font-size:10px;font-weight:600;color:{col};margin-top:2px;">{arrow} {delta}</div>' if delta else ""
+        delta_html = (f'<div style="font-size:10px;font-weight:600;color:{col};margin-top:auto;">{arrow} {delta}</div>'
+                      if delta else '<div style="margin-top:auto;height:13px;"></div>')
         return f"""
         <div style="background:#fff;border:0.5px solid #E0E0DA;border-radius:10px;
-                    padding:9px 11px;border-left:3px solid {accent};min-height:78px;">
-          <div style="font-size:10px;color:{GREY_TXT};line-height:1.2;margin-bottom:4px;">{label}</div>
+                    padding:9px 11px;border-left:3px solid {accent};
+                    height:96px;display:flex;flex-direction:column;">
+          <div style="font-size:10px;color:{GREY_TXT};line-height:1.25;margin-bottom:4px;min-height:26px;">{label}</div>
           <div style="font-size:18px;font-weight:600;color:{BLACK};">{value}</div>
           {delta_html}
         </div>"""
@@ -669,7 +711,7 @@ else:
 
     with g_col:
         # ── График 1: Доля по Банку / Целевое значение ──
-        chart_title("Доля по Банку / Целевое значение")
+        chart_title("Доля по Банку / Целевое значение (динамика за выбранный период)")
         s_46 = get_series(df, "metric_smr_46", eff_from_b, eff_to_b)
         s_45 = get_series(df, "metric_smr_45", eff_from_b, eff_to_b)
         all_d = sorted(set(s_46["date_end"].tolist()) | set(s_45["date_end"].tolist()))
@@ -678,26 +720,35 @@ else:
         map_45 = dict(zip(s_45["date_end"], s_45["value_s"]))
         y_46 = [map_46.get(d) for d in all_d]
         y_45 = [map_45.get(d) for d in all_d]
+        # Если данных мало — расширяем категориальную ось с отступом слева,
+        # столбец становится умеренной ширины и не прижат к краю
+        n_pts = max(len(x_lbl), 1)
+        if n_pts == 1:
+            xaxis_cfg = dict(
+                type="category", gridcolor=GRID, tickfont=dict(size=10),
+                range=[-1.0, 4.0],
+            )
+            bar_width = [0.7]
+        elif n_pts <= 3:
+            xaxis_cfg = dict(
+                type="category", gridcolor=GRID, tickfont=dict(size=10),
+                range=[-0.7, max(5.5, n_pts + 2)],
+            )
+            bar_width = [0.7] * n_pts
+        else:
+            xaxis_cfg = dict(type="category", gridcolor=GRID, tickfont=dict(size=10))
+            bar_width = [0.45] * n_pts
+
         f5 = go.Figure()
         f5.add_trace(go.Bar(name="Доля БМО, %", x=x_lbl, y=y_46,
             marker_color=GREEN, opacity=0.85,
-            width=[0.45]*len(x_lbl),  # фикс. ширина столбца (в долях категории)
+            width=bar_width,
             hovertemplate="<b>%{x}</b><br>Доля БМО: %{y:.1f}%<extra></extra>"))
         f5.add_trace(go.Scatter(name="Целевое значение", x=x_lbl, y=y_45,
             mode="lines+markers",
             line=dict(color=ORANGE, width=2.5, dash="dash"),
             marker=dict(size=6, color=ORANGE),
             hovertemplate="<b>%{x}</b><br>Цель: %{y:.1f}%<extra></extra>"))
-        # Если данных мало — расширяем категориальную ось, оси прижимаем влево
-        n_pts = max(len(x_lbl), 1)
-        if n_pts <= 3:
-            # ставим фиксированный диапазон, прижимаем влево
-            xaxis_cfg = dict(
-                type="category", gridcolor=GRID, tickfont=dict(size=10),
-                range=[-0.5, 7.5],  # резервируем 8 позиций → столбец узкий и слева
-            )
-        else:
-            xaxis_cfg = dict(type="category", gridcolor=GRID, tickfont=dict(size=10))
         f5.update_layout(
             height=240, margin=dict(t=10, b=30, l=42, r=8),
             paper_bgcolor=BG, plot_bgcolor=BG,
@@ -712,7 +763,7 @@ else:
 
     with q_col:
         # ── График 2: Качество работы с отклонениями (10 и 7) ──
-        chart_title("Качество работы с отклонениями: пораженность и счётчик повторов")
+        chart_title("Качество работы с отклонениями: пораженность и счётчик повторов (динамика за 3 месяца)")
         df3m_from = (pd.Timestamp(eff_to_b) - pd.DateOffset(months=3)).date()
         s_10 = get_series(df, "metric_smr_10", df3m_from, eff_to_b)
         s_7  = get_series(df, "metric_smr_7",  df3m_from, eff_to_b)
@@ -745,9 +796,9 @@ else:
         )
         st.plotly_chart(fQ, use_container_width=True, config={"displayModeBar": False})
 
-    # ── кнопка скачивания ──────────────────────────────────────────────
+    # ── кнопки внизу страницы: Скачать слева, Обновить справа ──────────
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-    dl_col, _ = st.columns([1.5, 8.5])
+    dl_col, _spacer, rf_col = st.columns([1.5, 7, 1.5])
     with dl_col:
         render_export_button(
             df,
@@ -757,36 +808,5 @@ else:
             eff_from_b, eff_to_b,
             key="dl_bmo", file_label="БМО"
         )
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# ПОДВАЛ: незаметная кнопка обновления данных в правом нижнем углу
-# ══════════════════════════════════════════════════════════════════════════
-st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
-foot_l, foot_r = st.columns([8, 2])
-with foot_r:
-    st.markdown(
-        """<style>
-        div[data-testid="column"]:has(div.refresh-marker) button {
-            background: transparent !important;
-            border: none !important;
-            color: #999 !important;
-            font-size: 11px !important;
-            font-weight: 400 !important;
-            padding: 4px 8px !important;
-        }
-        div[data-testid="column"]:has(div.refresh-marker) button:hover {
-            color: #2A7E2E !important;
-            background: transparent !important;
-        }
-        </style><div class="refresh-marker"></div>""",
-        unsafe_allow_html=True,
-    )
-    if st.button("обновить данные", key="footer_refresh"):
-        try:
-            if os.path.exists(XLSX_PATH):
-                _convert_xlsx_to_json()
-            st.cache_data.clear()
-            st.rerun()
-        except Exception as e:
-            st.error(f"Ошибка обновления: {e}")
+    with rf_col:
+        render_refresh_button("refresh_bmo")
